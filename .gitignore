@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.svelte-kit/
+build/
+dist/
+coverage/
+test-results/
+playwright-report/
+.babu-backup/
+.idea/
+supabase/.temp/
+supabase/.branches/

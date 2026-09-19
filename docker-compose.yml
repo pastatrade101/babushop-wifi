@@ -1,0 +1,56 @@
+# Set a separate secrets file for each service; no bootstrap/admin secrets in web.
+services:
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+    command: ["node", "apps/web/build"]
+    env_file: .env.web
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      API_INTERNAL_URL: http://api:4000
+    expose: ["3000"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/portal').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+    command: ["pnpm", "--filter", "@babu/api", "start"]
+    env_file: .env.api
+    environment:
+      API_HOST: 0.0.0.0
+      API_PORT: 4000
+    expose: ["4000"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+  worker:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+    command: ["pnpm", "--filter", "@babu/worker", "start"]
+    env_file: .env.api
+    restart: unless-stopped
+    stop_grace_period: 40s
+  proxy:
+    image: caddy:2.10.2-alpine
+    ports: ["80:80", "443:443"]
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set your public hostname}
+    volumes:
+      - ./infra/reverse-proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+volumes:
+  caddy_data:
+  caddy_config:

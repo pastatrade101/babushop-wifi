@@ -1,0 +1,17 @@
+{
+  "name": "@babu/worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "check": "tsc -p ../../tsconfig.json",
+    "build": "tsc -p ../../tsconfig.json"
+  },
+  "dependencies": {
+    "@babu/contracts": "workspace:*",
+    "@babu/database": "workspace:*",
+    "@babu/omada": "workspace:*"
+  }
+}

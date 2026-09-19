@@ -1,0 +1,5 @@
+import {fail} from '@sveltejs/kit';
+import {env} from '$env/dynamic/private';
+import {api,brand} from '$lib/server/api';
+export const load=async(event:any)=>{let context_token='',context_error='';const context:any={};for(const k of ['clientMac','clientIp','apMac','ssidName','radioId','site'])if(event.url.searchParams.has(k))context[k]=event.url.searchParams.get(k);try{if(!context.clientMac)context_error='Join the shop Wi-Fi to open your secure connection page.';else context_token=(await api(event,'/portal/context',context)).context_token;}catch(e){context_error=(e as Error).message;}return {brand:brand(),support:env.WIFI_SUPPORT_CONTACT||'',mock:env.OMADA_MODE==='mock',context_token,context_error};};
+export const actions={default:async(event:any)=>{const f=await event.request.formData();try{return await api(event,'/portal/redeem',{code:String(f.get('code')||''),context_token:String(f.get('context_token')||'')});}catch(e){return fail(400,{error:(e as Error).message});}}};

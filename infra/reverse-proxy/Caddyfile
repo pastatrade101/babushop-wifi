@@ -1,0 +1,8 @@
+{$APP_DOMAIN} {
+  # Intentionally no access log: portal redirect query strings contain client context.
+  encode zstd gzip
+  header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  @api path /api/v1/* /health/* /docs*
+  reverse_proxy @api api:4000
+  reverse_proxy web:3000
+}

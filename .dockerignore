@@ -1,0 +1,9 @@
+.git
+.env*
+.babu-backup
+.idea
+**/node_modules
+**/.svelte-kit
+**/build
+test-results
+playwright-report

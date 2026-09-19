@@ -1,0 +1,39 @@
+import {createHash,randomUUID} from 'node:crypto';
+import {pool,tx,audit,requireValue,SITE,type Staff} from './index.ts';
+import {generate,present,digest,encrypt,decrypt} from './crypto.ts';
+export async function generateBatch(staff:Staff,input:{package_id:string;quantity:number;label?:string}){
+ return tx(async db=>{const p=(await db.query('select * from wifi.packages where id=$1 and active and site_id=$2 for share',[input.package_id,SITE])).rows[0];requireValue(p,400,'Choose an active package');requireValue(input.quantity<=Number(process.env.MAX_BATCH_SIZE||100),400,'Batch exceeds configured maximum');
+ const batch=(await db.query('insert into wifi.voucher_batches(site_id,package_id,label,quantity,created_by) values($1,$2,$3,$4,$5) returning *',[SITE,p.id,input.label||'',input.quantity,staff.id])).rows[0];
+ for(let i=0;i<input.quantity;i++){const code=generate();await db.query('insert into wifi.vouchers(site_id,batch_id,package_id,code_digest,code_encrypted,code_mask,package_name,price_tzs,duration_minutes) values($1,$2,$3,$4,$5,$6,$7,$8,$9)',[SITE,batch.id,p.id,digest(code),encrypt(code),'••••-••••-••••-'+code.slice(-4),p.name,p.price_tzs,p.duration_minutes]);}await audit(db,staff.id,'BATCH_GENERATED',batch.id,{quantity:input.quantity});return batch;});
+}
+export async function reserve(staff:Staff,input:{package_id:string;quantity:number}){
+ return tx(async db=>{const vouchers=(await db.query("select v.* from wifi.vouchers v join wifi.packages p on p.id=v.package_id where v.package_id=$1 and p.active and v.inventory_state='AVAILABLE' and (v.reserved_until is null or v.reserved_until<now()) order by v.created_at,v.id limit $2 for update of v skip locked",[input.package_id,input.quantity])).rows;
+ requireValue(vouchers.length===input.quantity,409,'Not enough available stock. Reduce quantity or ask an administrator.');
+ const r=(await db.query("insert into wifi.sale_reservations(staff_id,expires_at) values($1,now()+interval '5 minutes') returning *",[staff.id])).rows[0];
+ await db.query('update wifi.vouchers set reservation_id=$1,reserved_until=$2 where id=any($3::uuid[])',[r.id,r.expires_at,vouchers.map(v=>v.id)]);
+ return {...r,total_tzs:vouchers.reduce((a,v)=>a+v.price_tzs,0),items:vouchers.map(v=>({id:v.id,package_name:v.package_name,price_tzs:v.price_tzs,duration_minutes:v.duration_minutes}))};});
+}
+export async function sell(staff:Staff,input:{reservation_id:string;cash_received:boolean;customer_name?:string;customer_phone?:string;notes?:string},idempotencyKey:string){
+ requireValue(input.cash_received,400,'Confirm cash received');const hash=createHash('sha256').update(JSON.stringify(input)).digest('hex');
+ return tx(async db=>{await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[staff.id+idempotencyKey]);const prior=(await db.query('select * from wifi.idempotency_records where staff_id=$1 and key=$2',[staff.id,idempotencyKey])).rows[0];if(prior){requireValue(prior.request_hash===hash,409,'Idempotency key was already used for different details');return prior.response;}
+ const reservation=(await db.query('select * from wifi.sale_reservations where id=$1 for update',[input.reservation_id])).rows[0];requireValue(reservation&&reservation.staff_id===staff.id&&new Date(reservation.expires_at).getTime()>Date.now(),409,'Reservation expired or unavailable. Select stock again.');
+ const vouchers=(await db.query("select * from wifi.vouchers where reservation_id=$1 and inventory_state='AVAILABLE' order by id for update",[reservation.id])).rows;requireValue(vouchers.length>0,409,'Stock already sold or no longer available');
+ const sale=(await db.query('insert into wifi.manual_sales(receipt_number,cashier_id,site_id,reservation_id,total_tzs,customer_name,customer_phone,notes) values($1,$2,$3,$4,$5,$6,$7,$8) returning *',['BW-'+randomUUID().toUpperCase(),staff.id,SITE,reservation.id,vouchers.reduce((a,v)=>a+v.price_tzs,0),input.customer_name||null,input.customer_phone||null,input.notes||null])).rows[0];
+ for(const v of vouchers)await db.query('insert into wifi.manual_sale_items(sale_id,voucher_id,package_name,price_tzs,duration_minutes) values($1,$2,$3,$4,$5)',[sale.id,v.id,v.package_name,v.price_tzs,v.duration_minutes]);
+ await db.query("update wifi.vouchers set inventory_state='SOLD',sold_at=now(),reserved_until=null where reservation_id=$1",[reservation.id]);await audit(db,staff.id,'CASH_SALE',sale.id,{total_tzs:sale.total_tzs,quantity:vouchers.length});await db.query('insert into wifi.idempotency_records(staff_id,key,request_hash,response) values($1,$2,$3,$4)',[staff.id,idempotencyKey,hash,sale]);return sale;
+ });
+}
+export async function reverse(staff:Staff,id:string,reason:string){return tx(async db=>{
+ const sale=(await db.query('select * from wifi.manual_sales where id=$1 for update',[id])).rows[0];requireValue(sale,404,'Sale not found');requireValue(!(await db.query('select 1 from wifi.sale_reversals where sale_id=$1',[id])).rowCount,409,'Sale already reversed');
+ const vouchers=(await db.query('select v.* from wifi.vouchers v join wifi.manual_sale_items i on i.voucher_id=v.id where i.sale_id=$1 order by v.id for update of v',[id])).rows;
+ requireValue(!(await db.query('select 1 from wifi.access_grants where voucher_id=any($1::uuid[])',[vouchers.map(v=>v.id)])).rowCount,409,'Only completely unused vouchers can be reversed');
+ const reversal=(await db.query('insert into wifi.sale_reversals(sale_id,staff_id,reason) values($1,$2,$3) returning *',[id,staff.id,reason])).rows[0];await db.query("update wifi.vouchers set inventory_state='VOID' where id=any($1::uuid[])",[vouchers.map(v=>v.id)]);await audit(db,staff.id,'SALE_REVERSED',id,{reason});return reversal;
+});}
+export async function reveal(staff:Staff,filter:{voucher_id?:string;batch_id?:string;sale_id?:string},purpose='REVEAL'){
+ return tx(async db=>{requireValue(staff.role==='ADMIN'||!!filter.sale_id,403,'Administrator permission required');
+ if(filter.sale_id){const sale=(await db.query('select * from wifi.manual_sales where id=$1',[filter.sale_id])).rows[0];requireValue(sale&&(staff.role==='ADMIN'||sale.cashier_id===staff.id),404,'Sale not found');}
+ const rows=(await db.query(`select v.id,v.code_encrypted,v.package_name,v.price_tzs,v.duration_minutes,v.inventory_state from wifi.vouchers v where ($1::uuid is null or v.id=$1) and ($2::uuid is null or v.batch_id=$2) and ($3::uuid is null or exists(select from wifi.manual_sale_items i where i.voucher_id=v.id and i.sale_id=$3)) order by v.created_at,v.id`,[filter.voucher_id||null,filter.batch_id||null,filter.sale_id||null])).rows;
+ await audit(db,staff.id,purpose,filter.voucher_id||filter.batch_id||filter.sale_id||null,{count:rows.length});return rows.map(({code_encrypted,...r})=>({...r,code:present(decrypt(code_encrypted))}));});
+}
+export async function voidVoucher(staff:Staff,id:string,reason:string){return tx(async db=>{const v=(await db.query('select * from wifi.vouchers where id=$1 for update',[id])).rows[0];requireValue(v?.inventory_state==='AVAILABLE'&&(!v.reserved_until||new Date(v.reserved_until).getTime()<Date.now()),409,'Only unreserved available stock can be voided');await db.query("update wifi.vouchers set inventory_state='VOID' where id=$1",[id]);await audit(db,staff.id,'VOUCHER_VOIDED',id,{reason});return {ok:true};});}
+export async function saleDetail(staff:Staff,id:string){const sale=(await pool.query('select s.*,p.display_name cashier_name,r.reason reversal_reason from wifi.manual_sales s join wifi.staff_profiles p on p.id=s.cashier_id left join wifi.sale_reversals r on r.sale_id=s.id where s.id=$1 and ($2::boolean or cashier_id=$3)',[id,staff.role==='ADMIN',staff.id])).rows[0];requireValue(sale,404,'Sale not found');return {...sale,items:(await pool.query('select i.*,v.code_mask from wifi.manual_sale_items i join wifi.vouchers v on v.id=i.voucher_id where sale_id=$1',[id])).rows};}
