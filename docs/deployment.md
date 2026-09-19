@@ -1,3 +1,7 @@
+# MikroTik deployment
+
+For the selected L009 + EAP225 setup, follow [mikrotik-launch.md](mikrotik-launch.md) and the templates in `infra/deployment/`. The Omada live instructions below apply only to the earlier integration, not this hardware plan.
+
 # Local setup and deployment
 
 Use the pinned Node 22 LTS runtime in `.nvmrc` and pnpm 10.17.1. Docker Desktop and Supabase CLI are prerequisites for local Supabase. PostgreSQL 17 is used by local configuration. No Redis is needed.

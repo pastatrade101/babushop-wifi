@@ -12,7 +12,7 @@
     "check": "pnpm -r check",
     "build": "pnpm -r build",
     "lint": "eslint .",
-    "test": "vitest run tests/unit.test.ts tests/api.test.ts",
+    "test": "vitest run tests/unit.test.ts tests/api.test.ts tests/network.test.ts",
     "test:integration": "vitest run tests/integration.test.ts",
     "test:e2e": "playwright test",
     "db:start": "supabase start",
@@ -20,7 +20,8 @@
     "db:seed": "tsx scripts/seed.ts",
     "staff:create": "tsx scripts/staff-create.ts",
     "format": "prettier --write .",
-    "db:migrate:direct": "tsx scripts/migrate-direct.ts"
+    "db:migrate:direct": "tsx scripts/migrate-direct.ts",
+    "network:check": "tsx scripts/network-check.ts"
   },
   "devDependencies": {
     "typescript": "5.9.2",

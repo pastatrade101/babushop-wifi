@@ -16,3 +16,8 @@ Executed successfully:
 Not executed: production container deployment, restore drill, live Omada authorization/AP expiry, hardware rate enforcement, or actual network disconnect. These require the separate commissioning checklist and deployment configuration. Browser end-to-end test sales were confined to the local test app; hosted data was not populated with fake sales.
 
 Local running app: Desktop/mikrotik; web 5188, API 4000, separate worker. OMADA_MODE remains mock. No real network configuration was changed.
+
+
+## MikroTik preparation — 19 September 2026
+
+24 unit/API tests and 19 isolated PostgreSQL integration tests passed, including speed validation, immutable voucher/sale snapshots, restricted diagnostics and the live-mode block. Svelte/TypeScript check and lint passed; production web build passed. Additive speed migration applied to the existing preview database without backfilling old terms. Local preview remains on 5188, API on 4000. Read-only router checker is implemented; MikroTik customer authorization, physical expiry/speed tests and VPS deployment are not completed in this preparation release.

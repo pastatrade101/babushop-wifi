@@ -46,6 +46,7 @@ export class LiveAdapter implements Adapter {
 }
 export function adapterFromEnv():Adapter{
  if(process.env.OMADA_MODE==='mock')return new MockAdapter(process.env.OMADA_MOCK_SCENARIO||'success');
+ if(process.env.NETWORK_PROVIDER==='mikrotik')throw new Error('MikroTik live authorization is not commissioned. Keep OMADA_MODE=mock until the MikroTik access integration is implemented and verified on hardware.');
  if(process.env.OMADA_MODE!=='live')throw new Error('OMADA_MODE must be explicitly mock or live');
  return new LiveAdapter({baseUrl:process.env.OMADA_BASE_URL||'',controllerId:process.env.OMADA_CONTROLLER_ID||'',username:process.env.OMADA_OPERATOR_USERNAME||'',password:process.env.OMADA_OPERATOR_PASSWORD||'',profile:process.env.OMADA_PROFILE as LiveConfig['profile'],timeUnit:process.env.OMADA_TIME_UNIT as LiveConfig['timeUnit'],timeMeaning:process.env.OMADA_TIME_MEANING as LiveConfig['timeMeaning'],fieldType:process.env.OMADA_FIELD_TYPE as LiveConfig['fieldType'],expiryVerified:process.env.OMADA_EXPIRY_VERIFIED==='true',caPath:process.env.OMADA_CA_PATH});
 }

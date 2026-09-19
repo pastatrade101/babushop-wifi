@@ -12,3 +12,8 @@ playwright-report/
 .idea/
 supabase/.temp/
 supabase/.branches/
+
+infra/secrets/
+*.key
+*.p12
+*.pfx

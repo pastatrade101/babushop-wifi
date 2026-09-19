@@ -1,3 +1,4 @@
+import {toMinutes,durationParts,formatDuration} from '../apps/web/src/lib/duration.ts';
 import {describe,it,expect} from 'vitest';
 import {generate,normalize,present,encrypt,decrypt,digest,csvCell,alphabet} from '../packages/database/src/crypto.ts';
 import {MockAdapter,LiveAdapter,adapterFromEnv} from '../packages/omada/src/index.ts';
@@ -14,4 +15,10 @@ describe('network boundary',()=>{
  it('exercises all mock outcomes',async()=>{for(const [scenario,status]of [['success','accepted'],['rejection','rejected'],['timeout','unknown'],['expired-session','accepted']]){const a=new MockAdapter(scenario);expect((await a.authorize(context,new Date(Date.now()+60000))).status).toBe(status);if(scenario==='expired-session')expect(a.calls).toBe(2);}});
  it('live mode fails safely without verified expiry',()=>{expect(()=>new LiveAdapter({baseUrl:'https://controller.internal:8043',controllerId:'id',username:'operator',password:'secret',profile:'modern',timeUnit:'milliseconds',timeMeaning:'timestamp',fieldType:'number',expiryVerified:false})).toThrow('commissioned');});
  it('never silently chooses mock mode',()=>{const old=process.env.OMADA_MODE;process.env.OMADA_MODE='typo';expect(()=>adapterFromEnv()).toThrow();process.env.OMADA_MODE=old;});
+});
+
+describe('package duration conversion',()=>{
+ it('supports 24-hour, weekly and fixed-month entitlements',()=>{expect(toMinutes(24,'hours')).toBe(1440);expect(toMinutes(1,'weeks')).toBe(10080);expect(toMinutes(1,'months')).toBe(43200);expect(formatDuration(1440)).toBe('24 hours');expect(formatDuration(43200)).toBe('1 month (30 days)');});
+ it('preserves existing durations when opening and saving an editor',()=>{for(const minutes of [1,59,60,90,1440,2880,10080,43200,525600]){const p=durationParts(minutes);expect(toMinutes(p.duration_amount,p.duration_unit)).toBe(minutes);}});
+ it('rejects unsupported, fractional and oversized durations',()=>{for(const [amount,unit] of [[0,'days'],[1.5,'hours'],[13,'months'],[1,'unknown']] as const)expect(()=>toMinutes(amount,unit)).toThrow();});
 });

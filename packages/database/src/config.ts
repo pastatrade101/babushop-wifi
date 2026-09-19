@@ -1,5 +1,7 @@
+import {networkPlan} from '../../network/src/index.ts';
 import {key} from './crypto.ts';
 export function validateEnvironment(){
+ networkPlan();
  for(const name of ['DATABASE_URL','SUPABASE_URL','SUPABASE_PUBLISHABLE_KEY','APP_ORIGIN','PORTAL_SITE','PORTAL_SSID','PORTAL_AP_MACS'])if(!process.env[name])throw new Error(`${name} is required`);
  for(const name of ['VOUCHER_LOOKUP_KEY','VOUCHER_ENCRYPTION_KEY','PORTAL_CONTEXT_SECRET'])key(name);
  if(process.env.VOUCHER_LOOKUP_KEY===process.env.VOUCHER_ENCRYPTION_KEY)throw new Error('Voucher keys must be independent');

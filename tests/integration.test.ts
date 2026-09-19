@@ -1,5 +1,5 @@
 import {beforeAll,afterAll,it,expect} from 'vitest';
-import {readFile} from 'node:fs/promises';
+import {readFile,readdir} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {pool,SITE,type Staff} from '../packages/database/src/index.ts';
 import {generateBatch,reserve,sell,reveal,reverse} from '../packages/database/src/sales.ts';
@@ -11,7 +11,7 @@ const ctx={clientMac:'AA:00:00:00:00:01',apMac:'AA:BB:CC:DD:EE:01',site:'babu-sh
 let app:Awaited<ReturnType<typeof buildApp>>;
 beforeAll(async()=>{const url=new URL(process.env.DATABASE_URL!);if(!url.pathname.endsWith('_test')||!['127.0.0.1','localhost'].includes(url.hostname))throw new Error('Integration tests require an isolated local database whose name ends in _test');
  await pool.query("create schema if not exists auth; create table if not exists auth.users(id uuid primary key); do $$ begin if not exists(select from pg_roles where rolname='anon') then create role anon; end if; if not exists(select from pg_roles where rolname='authenticated') then create role authenticated; end if; end $$; drop schema if exists wifi cascade");
- await pool.query(await readFile(new URL('../supabase/migrations/202609190001_babu_wifi.sql',import.meta.url),'utf8'));await pool.query(await readFile(new URL('../supabase/seed.sql',import.meta.url),'utf8'));
+ for(const file of (await readdir(new URL('../supabase/migrations/',import.meta.url))).filter(f=>f.endsWith('.sql')).sort())await pool.query(await readFile(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));await pool.query(await readFile(new URL('../supabase/seed.sql',import.meta.url),'utf8'));
  for(const s of [admin,cashier]){await pool.query('insert into auth.users(id) values($1) on conflict do nothing',[s.id]);await pool.query('insert into wifi.staff_profiles(id,display_name,role) values($1,$2,$3)',[s.id,s.display_name,s.role]);}
  app=await buildApp({adapter:new MockAdapter(),verifyToken:async t=>t==='admin'?admin.id:t==='cashier'?cashier.id:null});
 });
@@ -36,3 +36,14 @@ it('disabled staff are denied with an otherwise valid token',async()=>{await poo
 it('inventory responses contain no encrypted/digest/raw codes',async()=>{const r=await app.inject({url:'/api/v1/vouchers',headers:{authorization:'Bearer admin'}});expect(r.statusCode).toBe(200);expect(r.body).not.toMatch(/code_encrypted|code_digest/);expect(r.json().items[0]).not.toHaveProperty('code');expect(r.headers['cache-control']).toBe('no-store');});
 it('generated stock is excluded from revenue and Tanzania boundaries work',async()=>{const headers={authorization:'Bearer admin'};const before=(await app.inject({url:'/api/v1/reports/sales',headers})).json();await stock(10);const after=(await app.inject({url:'/api/v1/reports/sales',headers})).json();expect(after.gross_tzs).toBe(before.gross_tzs);const b=(await pool.query("select '2026-09-19'::timestamp at time zone 'Africa/Dar_es_Salaam' boundary")).rows[0];expect(b.boundary.toISOString()).toBe('2026-09-18T21:00:00.000Z');});
 it('anonymous Supabase roles cannot access business tables',async()=>{const c=await pool.connect();try{await c.query('begin');await c.query('set local role anon');await expect(c.query('select * from wifi.vouchers')).rejects.toThrow('permission denied');await c.query('rollback');}finally{c.release();}});
+
+it('snapshots package speeds into vouchers and sale items without changing old terms',async()=>{
+ const s=await stock();await pool.query('update wifi.packages set download_mbps=10,upload_mbps=5 where id=$1',[s.p.id]);
+ const b=await generateBatch(admin,{package_id:s.p.id,quantity:1});const codes=await reveal(admin,{batch_id:b.id});expect(codes[0]).toMatchObject({download_mbps:10,upload_mbps:5});
+ expect((await reveal(admin,{batch_id:s.b.id}))[0].download_mbps).toBeNull();
+ await pool.query('update wifi.packages set download_mbps=20 where id=$1',[s.p.id]);
+ await expect(pool.query('update wifi.vouchers set download_mbps=20 where batch_id=$1',[b.id])).rejects.toThrow('immutable');
+ const reservation=await reserve(admin,{package_id:s.p.id,quantity:2});const sale=await sell(admin,{reservation_id:reservation.id,cash_received:true},randomUUID());
+ expect((await pool.query('select download_mbps,upload_mbps from wifi.manual_sale_items where sale_id=$1 and voucher_id=$2',[sale.id,codes[0].id])).rows[0]).toEqual({download_mbps:10,upload_mbps:5});
+});
+it('denies cashiers access to router diagnostics',async()=>{expect((await app.inject({method:'POST',url:'/api/v1/integrations/mikrotik/test',headers:{authorization:'Bearer cashier'},payload:{}})).statusCode).toBe(403);});

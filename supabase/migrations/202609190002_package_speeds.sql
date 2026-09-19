@@ -1,0 +1,7 @@
+alter table wifi.packages add column download_mbps integer check(download_mbps between 1 and 10000), add column upload_mbps integer check(upload_mbps between 1 and 10000), add constraint packages_speed_pair check ((download_mbps is null) = (upload_mbps is null));
+alter table wifi.vouchers add column download_mbps integer check(download_mbps between 1 and 10000), add column upload_mbps integer check(upload_mbps between 1 and 10000), add constraint vouchers_speed_pair check ((download_mbps is null) = (upload_mbps is null));
+alter table wifi.manual_sale_items add column download_mbps integer check(download_mbps between 1 and 10000), add column upload_mbps integer check(upload_mbps between 1 and 10000), add constraint manual_sale_items_speed_pair check ((download_mbps is null) = (upload_mbps is null));
+create or replace function wifi.protect_voucher() returns trigger language plpgsql as $$ begin
+ if row(new.package_id,new.batch_id,new.site_id,new.package_name,new.price_tzs,new.duration_minutes,new.download_mbps,new.upload_mbps,new.policy,new.code_digest,new.code_encrypted) is distinct from row(old.package_id,old.batch_id,old.site_id,old.package_name,old.price_tzs,old.duration_minutes,old.download_mbps,old.upload_mbps,old.policy,old.code_digest,old.code_encrypted) then raise exception 'Voucher terms are immutable'; end if;
+ if old.inventory_state='VOID' and new.inventory_state<>'VOID' or old.inventory_state='SOLD' and new.inventory_state='AVAILABLE' then raise exception 'Inventory cannot be restored'; end if;
+ return new; end $$;

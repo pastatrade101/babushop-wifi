@@ -7,3 +7,8 @@
 **/build
 test-results
 playwright-report
+
+infra/secrets
+**/*.key
+**/*.p12
+**/*.pfx

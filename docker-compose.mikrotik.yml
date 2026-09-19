@@ -1,0 +1,9 @@
+# Use only after creating infra/secrets/mikrotik-ca.crt.
+# docker compose -f docker-compose.yml -f docker-compose.mikrotik.yml up -d --build
+services:
+  api:
+    volumes:
+      - ./infra/secrets/mikrotik-ca.crt:/run/secrets/mikrotik-ca.crt:ro
+  worker:
+    volumes:
+      - ./infra/secrets/mikrotik-ca.crt:/run/secrets/mikrotik-ca.crt:ro

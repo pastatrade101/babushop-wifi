@@ -1,0 +1,13 @@
+# VPS /etc/wireguard/wg0.conf — chmod 600. Replace keys before enabling.
+# Verify this subnet does not overlap existing LAN/VPN/container networks.
+[Interface]
+Address = 10.77.0.1/30
+ListenPort = 51820
+PrivateKey = REPLACE_WITH_VPS_PRIVATE_KEY
+
+[Peer]
+# L009 initiates the connection to the VPS (works behind normal NAT).
+PublicKey = REPLACE_WITH_ROUTER_PUBLIC_KEY
+AllowedIPs = 10.77.0.2/32
+# On the router peer: VPS_PUBLIC_IP:51820, Allowed Address 10.77.0.1/32,
+# persistent-keepalive 25s. This is management only, not a customer default route.
