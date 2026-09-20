@@ -30,6 +30,11 @@ services:
       NODE_ENV: production
       API_HOST: 0.0.0.0
       API_PORT: "4000"
+    volumes:
+      # Private CA that signed the MikroTik's management certificate, so the
+      # read-only router check can verify https://10.77.0.2 over WireGuard.
+      # A public certificate, no private key — but gitignored all the same.
+      - ./infra/secrets/mikrotik-ca.crt:/run/secrets/mikrotik-ca.crt:ro
     networks: [makutano-net]
     restart: unless-stopped
     healthcheck:
@@ -53,6 +58,8 @@ services:
     env_file: .env.api
     environment:
       NODE_ENV: production
+    volumes:
+      - ./infra/secrets/mikrotik-ca.crt:/run/secrets/mikrotik-ca.crt:ro
     depends_on:
       - api
     networks: [makutano-net]
