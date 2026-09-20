@@ -30,9 +30,18 @@ export interface NormalizedEvent {
  id:string;
  type:string;
  status:string;
+ /** The provider's own reference for this event. Namespace varies by provider. */
  reference:string;
+ /**
+  * Our reference, echoed back through provider metadata. Snippe quotes a
+  * different reference on the event (SN…) than it returned when the session was
+  * created (PAY…), so this is the only reliable correlation back to an intent.
+  */
+ ownReference:string|null;
  amount:number|null;
  currency:string|null;
+ /** Provider-supplied failure detail, for the audit trail. Never shown to buyers. */
+ failureReason:string|null;
  raw:unknown;
 }
 

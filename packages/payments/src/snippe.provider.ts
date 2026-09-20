@@ -11,7 +11,7 @@ const FAILED=new Set(['failed','cancelled','canceled','expired','declined','reve
 const base=()=>(process.env.SNIPPE_BASE_URL||'https://api.snippe.sh').replace(/\/+$/,'');
 
 interface SessionResponse {code?:number;message?:string;error?:string;data?:{reference?:string;checkout_url?:string;status?:string;message?:string}}
-interface SnippeEvent {id?:string;type?:string;data?:{reference?:string;status?:string;amount?:{value?:number;currency?:string}}}
+interface SnippeEvent {id?:string;type?:string;data?:{reference?:string;status?:string;amount?:{value?:number;currency?:string};metadata?:Record<string,unknown>;failure_reason?:string;failure_code?:string}}
 
 export const snippeProvider:PaymentProvider={
  name:'snippe',
@@ -23,6 +23,10 @@ export const snippeProvider:PaymentProvider={
   const payload:Record<string,unknown>={
    amount,currency:input.currency,description:input.description,reference:input.reference,
    customer:{name:input.customer.name,email:input.customer.email,phone:input.customer.phone},
+   // Echoed back on every event. Snippe quotes a transaction reference (SN…) on
+   // webhooks, not the session reference (PAY…) it returns here and not the
+   // `reference` above, so metadata is the only dependable way back to our row.
+   metadata:{intent_reference:input.reference},
    redirect_url:input.returnUrl,expires_in:900
   };
   // Snippe rejects non-public webhook URLs; in local development fall back to
@@ -57,7 +61,11 @@ export const snippeProvider:PaymentProvider={
   // indistinguishable from a second payment. Refuse rather than guess.
   if(!e.id)throw new Problem(400,'Event is missing an identifier');
   if(!e.data?.reference)throw new Problem(400,'Event is missing a reference');
-  return {id:e.id,type:e.type||'unknown',status:(e.data.status||'').toLowerCase(),reference:e.data.reference,amount:e.data.amount?.value??null,currency:e.data.amount?.currency??null,raw:body};
+  const own=e.data.metadata?.intent_reference;
+  return {id:e.id,type:e.type||'unknown',status:(e.data.status||'').toLowerCase(),reference:e.data.reference,
+   ownReference:typeof own==='string'&&own?own:null,
+   amount:e.data.amount?.value??null,currency:e.data.amount?.currency??null,
+   failureReason:e.data.failure_reason||e.data.failure_code||null,raw:body};
  },
 
  isPaid(status:string){return PAID.has(status.toLowerCase());},

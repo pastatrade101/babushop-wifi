@@ -113,7 +113,11 @@ export async function webhook(rawBody:Buffer|string,headers:Record<string,string
  requireValue(provider,503,'Payments are not configured');
  requireValue(provider!.verifyWebhook(rawBody,headers),401,'Invalid signature');
  const event=provider!.parseEvent(JSON.parse(Buffer.isBuffer(rawBody)?rawBody.toString('utf8'):String(rawBody)));
- const intent=(await pool.query('select * from wifi.payment_intents where provider=$1 and (reference=$2 or provider_reference=$2)',[provider!.name,event.reference])).rows[0];
+ // Match on our own reference first -- Snippe quotes a transaction reference on
+ // the event that matches neither the session reference it returned nor the one
+ // we sent, so metadata is the only dependable link. The other two are kept as
+ // fallbacks for providers that do echo a reference we already hold.
+ const intent=(await pool.query('select * from wifi.payment_intents where provider=$1 and (reference=$2 or reference=$3 or provider_reference=$3)',[provider!.name,event.ownReference,event.reference])).rows[0];
  // Record first, so an unrecognised or duplicate event still leaves a trail.
  const recorded=(await pool.query(`insert into wifi.payment_events(intent_id,provider,event_id,event_type,status,payload)
   values($1,$2,$3,$4,$5,$6) on conflict (provider,event_id) do nothing returning id`,
@@ -125,7 +129,7 @@ export async function webhook(rawBody:Buffer|string,headers:Record<string,string
   requireValue(event.amount===null||Math.round(event.amount)===intent.amount_tzs,400,'Amount does not match the purchase');
   await settle(intent.id);
  }else if(isFailure(event.status)&&intent.status==='PENDING'){
-  await release(intent.id,'Payment '+event.status);
+  await release(intent.id,event.failureReason||('Payment '+event.status));
  }
  return {ok:true};
 }
@@ -142,7 +146,10 @@ export async function status(claimToken:string){
  if(current.status==='PENDING'){
   const provider=paymentProvider();
   const live=provider?await provider.fetchStatus(current.provider_reference||current.reference):null;
+  // Release on a definitive provider failure rather than waiting out the hold:
+  // a cancelled payment should return the voucher to stock immediately.
   if(live?.paid)current=await settle(current.id);
+  else if(live&&isFailure(live.status))current=await release(current.id,'Payment '+live.status)||current;
   else if(new Date(current.expires_at).getTime()<Date.now())current=await release(current.id,'Checkout expired')||current;
  }
  if(current.status!=='PAID')
