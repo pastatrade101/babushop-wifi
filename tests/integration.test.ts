@@ -7,7 +7,7 @@ import {createHash,randomUUID} from 'node:crypto';
 import {pool,SITE,type Staff} from '../packages/database/src/index.ts';
 import {generateBatch,reserve,sell,reveal,reverse} from '../packages/database/src/sales.ts';
 import {createContext,redeem,status,processOne,housekeeping,revoke} from '../packages/database/src/access.ts';
-import {MockAdapter} from '../packages/omada/src/index.ts';
+import {MockAdapter,MikroTikRadiusAdapter} from '../packages/omada/src/index.ts';
 import {buildApp} from '../apps/api/src/app.ts';
 const admin:Staff={id:randomUUID(),role:'ADMIN',display_name:'Test admin',enabled:true},cashier:Staff={id:randomUUID(),role:'CASHIER',display_name:'Test cashier',enabled:true};
 const ctx={clientMac:'AA:00:00:00:00:01',apMac:'AA:BB:CC:DD:EE:01',site:'babu-shop',ssidName:'BABU-SHOP WIFI',radioId:'0'};
@@ -61,3 +61,13 @@ it('RADIUS rejects expired and revoked grants permanently, regardless of worker 
 it('RADIUS does not convert old simulated activations into real entitlements',async()=>{const s=await sold();await activate(s.codes[0].code);await live(async()=>{expect(await authorizeRadius(proof(s.codes[0].code,ctx.clientMac),radiusConfigForTests)).toBeNull();await expect(redeem(s.codes[0].code,'anything')).rejects.toThrow('sign-in page');});});
 it('RADIUS uses voucher speed snapshots and never activates while in mock mode',async()=>{const s=await stock();await pool.query('update wifi.packages set download_mbps=12,upload_mbps=3 where id=$1',[s.p.id]);const b=await generateBatch(admin,{package_id:s.p.id,quantity:1}),codes=await reveal(admin,{batch_id:b.id});const reservation=await reserve(admin,{package_id:s.p.id,quantity:2});await sell(admin,{reservation_id:reservation.id,cash_received:true},randomUUID());expect(await authorizeRadius(proof(codes[0].code),radiusConfigForTests)).toBeNull();await pool.query('update wifi.packages set download_mbps=20 where id=$1',[s.p.id]);await live(async()=>expect(await authorizeRadius(proof(codes[0].code),radiusConfigForTests)).toMatchObject({download:12,upload:3}));});
 it('accounting duplicates and out-of-order packets neither inflate totals nor reopen sessions',async()=>live(async()=>{const s=await sold();await authorizeRadius(proof(s.codes[0].code),radiusConfigForTests);const event={username:s.codes[0].code,clientMac:'AA:00:00:00:00:11',sessionId:randomUUID(),status:'Interim-Update' as const,seconds:60,upload:'4000000000',download:'9000000000',terminateCause:null};await recordAccounting(event,'10.77.0.2');await recordAccounting(event,'10.77.0.2');await recordAccounting({...event,status:'Stop',seconds:120,upload:'4500000000',terminateCause:'Session-Timeout'},'10.77.0.2');await recordAccounting({...event,status:'Start',seconds:0,upload:'0',download:'0'},'10.77.0.2');const row=(await pool.query('select * from wifi.network_sessions where session_id=$1',[event.sessionId])).rows[0];expect(row.upload_bytes).toBe('4500000000');expect(row.download_bytes).toBe('9000000000');expect(row.stopped_at).toBeTruthy();const response=await app.inject({url:'/api/v1/sessions',headers:{authorization:'Bearer admin'}});expect(response.statusCode).toBe(200);expect(response.json().items[0].upload_bytes).toBe('4500000000');expect(response.body).not.toContain(normalize(s.codes[0].code));expect((await app.inject({url:'/api/v1/sessions',headers:{authorization:'Bearer cashier'}})).statusCode).toBe(403);}));
+
+it('runtime mode follows the API adapter for both staff roles and stays private',async()=>live(async()=>{
+ for(const role of ['admin','cashier']){
+  const r=await app.inject({url:'/api/v1/runtime',headers:{authorization:'Bearer '+role}});
+  expect(r.statusCode).toBe(200);expect(r.json()).toEqual({mode:'mock',provider:'mikrotik',radius_enabled:false});
+ }
+ expect((await app.inject('/api/v1/runtime')).statusCode).toBe(401);
+ const liveApp=await buildApp({adapter:new MikroTikRadiusAdapter(),verifyToken:async()=>cashier.id});
+ try{const r=await liveApp.inject({url:'/api/v1/runtime',headers:{authorization:'Bearer cashier'}});expect(r.json()).toEqual({mode:'live',provider:'mikrotik',radius_enabled:true});}finally{await liveApp.close();}
+}));

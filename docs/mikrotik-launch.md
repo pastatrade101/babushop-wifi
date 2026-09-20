@@ -138,6 +138,10 @@ MIKROTIK_RADIUS_ENABLED=true
 
 Set `.env.web` to `NETWORK_PROVIDER=mikrotik`, `OMADA_MODE=live`, `WIFI_BRAND="JIACHIE WIFI"`. Preserve APP_ORIGIN/ORIGIN=https://jiachie-wifi.com and all existing secrets. Rebuild/recreate api, worker and web with the existing Compose stack (`up -d --build --no-deps api worker web`). Leave Caddy alone. Keep radius running with `.env.radius`.
 
+The staff portal reads its mode from the authenticated API `/runtime` endpoint. The web environment alone cannot switch the badge to live. Deploy API and web together for this release. A separately running RADIUS service can authenticate vouchers while the portal API is still in test mode; the banner does not disable that service. “Live mode” describes configuration, and “Router reachable” describes the last read-only check. Neither is a claim that expiry or hardware commissioning passed.
+
+For refreshed customer branding, rebuild `WIFI_BRAND="JIACHIE WIFI" pnpm hotspot:build` and replace only the five generated HTML files **inside the router’s `hotspot/` directory**, preserving `md5.js`, `api.json`, and other router files. These pages use inline styles/icons with no external dependencies. Login accepts codes with or without hyphens. The compact layouts fit ordinary phone screens; smaller viewports, keyboards or enlarged text may still scroll so content is never clipped.
+
 The legacy variable name OMADA_MODE remains for compatibility; it selects mock/live for the chosen NETWORK_PROVIDER. The worker no longer dispatches Omada-style authorization for live MikroTik. Browser calls to the old redemption endpoint are rejected in MikroTik live mode.
 
 ## What the portal tracks (and limits)
