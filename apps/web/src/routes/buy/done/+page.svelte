@@ -46,7 +46,8 @@ onMount(()=>{check();return()=>clearTimeout(timer);});
  <p class="voucher-code">{code}</p>
  <button class="button full" onclick={copy}>{copied?'Copied ✓':'Copy code'}</button>
  <p class="small"><strong>Write this down now.</strong> For your security it is shown once and is not sent by SMS.</p>
- <p class="small muted">Connect to the shop Wi-Fi, open the sign-in page and enter this code.</p>
+ <a class="button secondary full" href="http://10.78.0.1/login">Open Wi-Fi sign-in →</a>
+ <p class="small muted">Copy your code first, then enter it on the Wi-Fi sign-in screen. This link works while connected to the shop Wi-Fi.</p>
 
 {:else if phase==='refund'}
  <p class="eyebrow">NEEDS ATTENTION</p><h1>Your payment needs the attendant.</h1>

@@ -21,7 +21,8 @@ $effect(()=>{
 {:else if data.items.length===0}
  <p class="notice">Every package is sold out at the moment. Please ask the attendant.</p>
 {:else}
- <p>Choose a package, pay with mobile money, and your code appears on the next screen.</p>
+ <p>Choose a package, pay with mobile money, and get your voucher code.</p>
+ <p class="small muted">Stay on the shop Wi-Fi and keep this browser open until your code appears. No mobile data bundle needed.</p>
  {#if form?.error}<p class="notice error" role="alert">{form.error}</p>{/if}
  <form method="POST" use:enhance={()=>{busy=true;return async({update})=>{await update({reset:false});busy=false;};}}>
   <fieldset disabled={busy}>
