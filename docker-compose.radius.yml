@@ -1,0 +1,17 @@
+# Merge into YOUR existing Compose deployment; do not replace the shared Caddy stack.
+# Host networking is intentional: preserve router source IP and bind only wg-babu.
+services:
+  radius:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+    command: ["node", "node_modules/tsx/dist/cli.mjs", "scripts/radius-server.ts"]
+    env_file: .env.radius
+    network_mode: host
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs: ["/tmp"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 15s

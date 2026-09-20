@@ -9,8 +9,9 @@ export function validateContext(input:Context):Context{
  requireValue(c.site===process.env.PORTAL_SITE&&c.ssidName===process.env.PORTAL_SSID&&(process.env.PORTAL_AP_MACS||'').split(',').map(mac).includes(c.apMac)&&/^[0-2]$/.test(c.radioId),400,'This Wi-Fi network is not configured. Contact the attendant.');
  requireValue(!c.clientIp||isIP(c.clientIp)>0,400,'Invalid network address');if(process.env.OMADA_MODE==='live'&&process.env.OMADA_PROFILE==='modern')requireValue(c.clientIp,400,'Missing network address');return c;
 }
-export async function createContext(input:Context){const context=validateContext(input),value=token();await pool.query("insert into wifi.portal_contexts(token_digest,context,expires_at) values($1,$2,now()+interval '10 minutes')",[digest(value,'PORTAL_CONTEXT_SECRET'),context]);return {context_token:value,expires_in:600};}
-export async function redeem(code:string,contextToken:string){const lookup=digest(normalize(code));return tx(async db=>{
+function browserPortalAllowed(){requireValue(!(process.env.NETWORK_PROVIDER==='mikrotik'&&process.env.OMADA_MODE==='live'),409,'Connect to the shop Wi-Fi and use its voucher sign-in page.');}
+export async function createContext(input:Context){browserPortalAllowed();const context=validateContext(input),value=token();await pool.query("insert into wifi.portal_contexts(token_digest,context,expires_at) values($1,$2,now()+interval '10 minutes')",[digest(value,'PORTAL_CONTEXT_SECRET'),context]);return {context_token:value,expires_in:600};}
+export async function redeem(code:string,contextToken:string){browserPortalAllowed();const lookup=digest(normalize(code));return tx(async db=>{
  const c=(await db.query('select * from wifi.portal_contexts where token_digest=$1 and expires_at>now()',[digest(contextToken,'PORTAL_CONTEXT_SECRET')])).rows[0];requireValue(c,400,'Network session expired. Rejoin the Wi-Fi.');
  const v=(await db.query('select * from wifi.vouchers where code_digest=$1 for update',[lookup])).rows[0];requireValue(v&&v.inventory_state==='SOLD',400,generic);
  let grant=(await db.query('select * from wifi.access_grants where voucher_id=$1 for update',[v.id])).rows[0];

@@ -12,7 +12,7 @@
     "check": "pnpm -r check",
     "build": "pnpm -r build",
     "lint": "eslint .",
-    "test": "vitest run tests/unit.test.ts tests/api.test.ts tests/network.test.ts",
+    "test": "vitest run tests/unit.test.ts tests/api.test.ts tests/network.test.ts tests/radius.test.ts",
     "test:integration": "vitest run tests/integration.test.ts",
     "test:e2e": "playwright test",
     "db:start": "supabase start",
@@ -21,27 +21,30 @@
     "staff:create": "tsx scripts/staff-create.ts",
     "format": "prettier --write .",
     "db:migrate:direct": "tsx scripts/migrate-direct.ts",
-    "network:check": "tsx scripts/network-check.ts"
+    "network:check": "tsx scripts/network-check.ts",
+    "start:radius": "tsx scripts/radius-server.ts",
+    "hotspot:build": "tsx scripts/build-hotspot.ts"
   },
   "devDependencies": {
-    "typescript": "5.9.2",
-    "tsx": "4.20.5",
+    "@eslint/js": "9.35.0",
+    "@playwright/test": "1.58.2",
     "@types/node": "22.18.0",
     "@types/pg": "8.15.5",
-    "vitest": "4.1.11",
-    "@playwright/test": "1.58.2",
     "concurrently": "9.2.1",
     "eslint": "9.35.0",
-    "typescript-eslint": "8.42.0",
     "eslint-plugin-svelte": "3.12.2",
-    "@eslint/js": "9.35.0",
     "globals": "16.3.0",
-    "prettier": "3.6.2"
+    "prettier": "3.6.2",
+    "tsx": "4.20.5",
+    "typescript": "5.9.2",
+    "typescript-eslint": "8.42.0",
+    "vitest": "4.1.11"
   },
   "dependencies": {
-    "pg": "8.16.3",
     "@supabase/supabase-js": "2.57.0",
-    "dotenv": "17.2.2"
+    "dotenv": "17.2.2",
+    "pg": "8.16.3",
+    "radius": "1.1.4"
   },
   "pnpm": {
     "overrides": {

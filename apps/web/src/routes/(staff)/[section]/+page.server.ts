@@ -2,7 +2,7 @@ import {toMinutes} from '$lib/duration';
 import {fail,error} from '@sveltejs/kit';
 import {randomUUID} from 'node:crypto';
 import {api} from '$lib/server/api';
-const allowed=['sell','vouchers','voucher-batches','packages','sales','access-grants','reports','staff','settings'];
+const allowed=['sell','vouchers','voucher-batches','packages','sales','access-grants','sessions','reports','staff','settings'];
 export const load=async(event:any)=>{const parent=await event.parent(),section=event.params.section;if(!allowed.includes(section))error(404,'Page not found');if(parent.staff.role!=='ADMIN'&&!['sell','vouchers','packages','sales'].includes(section))error(403,'Administrator access required');const query=new URLSearchParams();for(const k of ['page','q','state','sort','from','to'])if(event.url.searchParams.has(k))query.set(k,event.url.searchParams.get(k)!);let result:any={};
  if(section==='sell')result.packages=await api(event,'/packages');
  else if(section==='settings'){result.integration=await api(event,'/integrations/omada/status');result.network=await api(event,'/integrations/network/status');}

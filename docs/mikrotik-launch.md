@@ -1,76 +1,149 @@
-# BABU-SHOP WIFI — VPS and hardware launch
+# MikroTik voucher deployment — JIACHIE WIFI
 
-Prepared for: 150 Mbps fibre, MikroTik L009, TP-Link EAP225-Outdoor.
+This release implements MikroTik voucher authentication and fixed expiry using RADIUS. It has automated tests; deployment and physical voucher acceptance tests remain the operator's responsibility. Do not treat the read-only HTTPS check as commissioning. Nothing in this change deploys to the VPS or changes the router automatically.
 
-## Current readiness — do not skip this
+## Existing installation
 
-The application, sales workflow, duration editor, copy buttons, immutable package speed snapshots and read-only MikroTik connection check are prepared. The network remains simulated. **MikroTik voucher authorization is not implemented or commissioned yet.** Changing an environment flag cannot make it live: startup deliberately rejects MikroTik live mode. The existing authorization implementation targets Omada external portals, which is a different protocol.
+- Website: https://jiachie-wifi.com, shared containerised Caddy. Keep the existing Caddy and other sites unchanged.
+- VPS WireGuard: `wg-babu`, `10.77.0.1`; router: `10.77.0.2`.
+- Customer bridge: `babu-guest`, gateway `10.78.0.1`, DHCP working; EAP225 injector on ether2.
+- HotSpot: `babu-hotspot`, profile `babu-hotspot-profile`, `login-by=http-chap`.
+- Management Wi-Fi remains on bridge `192.168.88.1`. Customer firewall separation and FastTrack exceptions have been prepared. Do not delete the commissioning drop rules: authenticated internet allow rules precede them.
+- The separate local test account demonstrated a 5 Mbps queue and 10-minute session timeout. This does NOT yet test the portal's RADIUS path.
 
-Tomorrow requires completing the MikroTik access integration and passing the acceptance tests below before taking payment for real internet. An overnight preparation cannot verify boxed hardware. Never interpret a successful REST connection check as a live-access test.
+## How authentication and expiry work
 
-## Deployment layout
+The branded page lives on the MikroTik, so it loads before internet authorization and needs no broad cloud walled garden. Customers enter ONE voucher code. The page normalizes it and sends a CHAP challenge response, with the same normalized code as the username. It does not send a plain password or use the router administrator account.
 
-```text
-Customer phone → EAP225 (bridge/AP) → L009 HotSpot → fibre internet
-                      L009 → outbound WireGuard tunnel → VPS
-Browser → HTTPS portal on VPS → API / worker → Supabase
+MikroTik sends authenticated RADIUS requests over WireGuard. Only source/NAS `10.77.0.2`, the configured HotSpot name, valid Message-Authenticator and CHAP proof are accepted. The database verifies SOLD status and locks the voucher row. First valid authorization records its device and a fixed expiry. Retransmissions and reconnects use that same deadline. Old simulation/Omada grants cannot be silently activated on real hardware; issue fresh vouchers for live tests.
+
+The activation transaction commits before an Access-Accept is transmitted. A lost reply can therefore start the clock even if the phone never receives access. It never grants fresh time on retry: this conservative boundary avoids ambiguous network outcomes extending validity.
+
+Every Access-Accept includes the remaining Session-Timeout, one simultaneous user and the voucher's immutable upload/download limits. Codes without speed terms use the explicit fallback speed settings. Five seconds are subtracted for the <=3s RADIUS response window and delivery latency. Keep VPS time synchronized. No late (>2.5s processing) or cached Accept is sent. The router enforces the session timeout if the VPS/worker goes offline; reconnecting after expiry is rejected by the database regardless of worker housekeeping. Expiry continues while disconnected. Do not configure cookie, MAC-cookie, trial, MAC authentication or local voucher-user fallback.
+
+CHAP here is the existing RouterOS captive-portal mechanism over a local HTTP login page; it is not end-to-end HTTPS. Keep voucher codes high-entropy as generated. A trusted customer-facing HotSpot certificate is a separate upgrade; never reuse/expose router-management credentials.
+
+## 1. Apply the additive database migration
+
+Back up using the existing database backup process. Apply `supabase/migrations/202609200001_mikrotik_radius.sql` once using your established migration mechanism (Supabase SQL editor is also suitable). It adds grant provider tags and a session table; it does not change sales, code keys, or old deadlines.
+
+For the supplied migration tool, run from the repository with a private env containing `DATABASE_ADMIN_URL`:
+
+```sh
+BABU_ENV_FILE=/absolute/path/to/private-migration.env pnpm db:migrate:direct
 ```
 
-No Omada controller is required for this topology. MikroTik must see each customer's MAC/IP; do not put another NAT router between the EAP and HotSpot.
+Run that on the checkout (the production image does not contain Supabase migration files). Never put the admin database URL in the web/API/RADIUS runtime containers. Do not run seed or integration tests against production.
 
-Use an always-on Linux VPS with Docker Compose, a public domain pointed at it, and a private WireGuard link to the router. The laptop development server at 127.0.0.1:5188 is not a public deployment.
+## 2. Add the private RADIUS service
 
-Required values: VPS public IP, portal domain, administrator SSH access, Supabase connection, actual fibre upload rate, router firmware version. Do not put secrets into chat or Git.
+Copy `infra/deployment/radius.env.template` to `.env.radius` and chmod it 600. Use the SAME runtime DATABASE_URL, VOUCHER_LOOKUP_KEY and VOUCHER_ENCRYPTION_KEY as the API. Never regenerate existing voucher keys.
 
-## Tonight: prepare the VPS
+Generate one NEW RADIUS shared secret (`openssl rand -hex 32`) and enter it privately in `.env.radius`. The identical 64-character value will be entered in WinBox. Do not send it through chat or commit it. Keep the exact WireGuard bind/client addresses, HotSpot name and `babu-vouchers` group from the template. Choose fallback upload/download rates deliberately; the supplied values are 2/5 Mbps, for older vouchers that have no speed fields.
 
-1. Provision a supported Linux VPS and SSH key access. Enable a host firewall: permit SSH only from administrator addresses, public TCP 80/443 for the portal and UDP 51820 for WireGuard. Do not expose API port 4000, database ports or RouterOS management to the internet.
-2. Install Docker Engine, Compose and WireGuard using the OS/vendor instructions. Copy this repository without `.env`, `.babu-backup`, `node_modules` or development artifacts. Supply production secrets separately with file permissions 600.
-3. Point a domain's DNS at the VPS. Set `APP_DOMAIN` to that hostname, `APP_ORIGIN=https://HOSTNAME`, and keep `OMADA_MODE=mock` until the MikroTik access path exists and has passed commissioning. `OMADA_MODE` is a legacy variable retained by this preparation release; it is not an instruction to buy Omada hardware.
-4. Create `.env.web` and `.env.api` from `infra/deployment/web.env.template` and `api.env.template`. Web must not get database, voucher encryption, service-role or router secrets. API/worker get only the restricted runtime database login, not DATABASE_ADMIN_URL or SUPABASE_SECRET_KEY. Preserve the existing voucher keys if using the existing database; rotating them breaks existing codes.
-5. Apply committed migrations separately using the privileged migration CLI. Use a secure temporary environment and remove it from the deployment after use. Keep the database timezone behavior unchanged.
-6. Run `docker compose config --quiet`, `docker compose up -d --build`, then check `docker compose ps` and the `/login` and `/portal` pages via HTTPS. Configure Supabase Site URL/allowed redirects for the actual domain; disable public signup. Verify staff login. Change the temporary admin password before sales begin.
-7. WireGuard: create separate private/public key pairs on the VPS and router; never reuse or commit private keys. Use the supplied `infra/mikrotik/wg0.conf.template`. Choose a non-overlapping subnet; example addresses are VPS `10.77.0.1/30` and L009 `10.77.0.2/30`. Do not send customer internet traffic through the VPS. The tunnel is only for management/API. Check that Docker outbound routing to `10.77.0.2` works and limit its forwarding to the expected app containers; do not open general guest-to-management forwarding.
+Merge the `radius` service from `docker-compose.radius.yml` into your EXISTING Compose stack or add that file to the stack's usual `-f` arguments. It runs the same application image with `pnpm start:radius` and host networking, binding ONLY `10.77.0.1:1812/udp` and `10.77.0.1:1813/udp`. Host networking preserves the router's source address. It does not publish HTTP ports or join/change Caddy networks. No TLS management credential is required by this service.
 
-## Tomorrow: unbox and configure
+Build/start only that service using your existing Compose file arguments:
 
-1. Connect a staff laptop directly to L009 and use WinBox. Record exact model/RouterOS version. Back up factory/current configuration and use Safe Mode for network changes. Install a suitable stable RouterOS 7 release after reviewing its notes. Do not reset/import a generic script over an unknown configuration.
-2. Fibre/ISP router goes to the chosen L009 WAN port (usually ether1). Confirm whether the ISP supplies DHCP, PPPoE or a static address; keep ISP credentials private. Run a wired download/upload test. Set WAN_UPLOAD_MBPS from verified capacity. 150 Mbps is aggregate download capacity, not a promise to every client.
-3. Use the EAP225's supplied PoE injector: L009 customer LAN → injector LAN, injector PoE → EAP225. Check the supplied injector/device labels; do not assume the L009 supplies compatible PoE power. Configure SSID `BABU-SHOP WIFI`, AP/bridge operation and a strong management password. Enable wireless client isolation as supported. Keep EAP management reachable only by staff.
-4. Separate customer and management networks. Proposed customer subnet `10.20.0.0/24`, gateway `10.20.0.1`; verify no overlap first. Keep a wired management recovery port. Configure DHCP, DNS, NAT and HotSpot `babu-hotspot` on the customer interface only. Use MikroTik's HotSpot setup wizard after reviewing its generated rules. Do not add WAN to the customer bridge.
-5. Deny customer access to staff LAN, router management, private VPN and other guests. Address IPv6 explicitly: RouterOS HotSpot is IPv4-based, so the customer network must not have an unauthenticated IPv6 internet path. Check FastTrack exclusions because HotSpot and speed queues must not be bypassed. No trial/MAC/cookie login that bypasses the portal's sale, binding and expiry policy.
-6. Establish WireGuard: L009 peer endpoint is the VPS IP:51820, allowed address `10.77.0.1/32`, persistent keepalive 25s. VPS peer allowed address is `10.77.0.2/32`. Permit only intended private management traffic.
-7. Set up RouterOS HTTPS with a certificate trusted by the VPS, whose SAN matches MIKROTIK_BASE_URL. Restrict the service and dedicated account to the VPS tunnel address. For the read-only check, use a dedicated group with the required `read,rest-api` permissions; do not grant full admin to the app. Confirm actual required permissions on your RouterOS version. Create `infra/secrets/mikrotik-ca.crt` (readable by the container’s node user) and start with `docker compose -f docker-compose.yml -f docker-compose.mikrotik.yml up -d --build` to mount the CA. Never disable TLS verification.
-8. Set the private `MIKROTIK_BASE_URL`, username/password, CA path and hotspot server in `.env.api`. Run `pnpm network:check` from a secured environment or use **Network setup → Check MikroTik connection**. This reads system/resource and ip/hotspot only.
+```sh
+docker compose -f YOUR_EXISTING_COMPOSE.yml -f docker-compose.radius.yml up -d --build --no-deps radius
+docker compose -f YOUR_EXISTING_COMPOSE.yml -f docker-compose.radius.yml logs --tail=30 radius
+ss -lun | grep -E ':1812|:1813'
+```
 
-## Remaining implementation before go-live
+WireGuard must be up before this service can bind. It restarts if binding/DB startup fails. Expected listener addresses are `10.77.0.1`, NOT `0.0.0.0` or the public IP. Allow UDP 1812/1813 only from 10.77.0.2 on wg-babu through any existing host filters; do not broadly enable/change UFW or expose these ports publicly. Do not open a public RADIUS port at the provider.
 
-Implement and test a MikroTik-specific customer login/authentication flow against the installed version. Use the documented HotSpot external-login flow or a private RADIUS integration; do not invent an `/active/login` endpoint. Replace Omada AP redirect assumptions with validated MikroTik context. Verify MAC/IP against the router, never trust URL parameters alone. Keep unsold vouchers unusable.
+`.env.radius` intentionally has live authentication enabled for commissioning even while the web/API retain the simulation banner. Do not serve paying customers during this staged state.
 
-Enforce absolute expiry on the network: a week means seven days from first activation including offline time. RouterOS `limit-uptime` alone is cumulative connected time and is insufficient. Reconnects must use remaining entitlement, not restart the clock. The selected design must reject expired authentication after a router reboot and cut off sessions without relying solely on a reachable VPS worker. Handle timeout/ambiguous authorization without double granting. Implement network disconnect/revocation before claiming that an admin revoke immediately disconnects a user.
+## 3. Install branded customer pages
 
-Map saved download/upload limits correctly: RouterOS rx is customer upload; tx is customer download. New voucher snapshots preserve these values even if a package later changes. Old vouchers remain time-only; do not backfill sold terms. Packages are “up to” speeds, with total download bounded by the shared line. Configure a parent/fairness policy based on measured upload and download, and verify FastTrack does not bypass it.
+Build on your checkout:
 
-Configure the real HTTPS portal and minimal walled-garden dependencies. Supabase staff auth should not be needed for customer login. Check DNS and portal assets from an unauthenticated phone. Keep all app/API/router secrets server-side.
+```sh
+WIFI_BRAND="JIACHIE WIFI" pnpm hotspot:build
+```
 
-## Acceptance — all must pass before real sales
+Optionally set `WIFI_SUPPORT_CONTACT` at build time. Pages are generated at `dist/hotspot/` and need no external assets/fonts. Changing the portal's brand later requires rebuilding/re-uploading these pages.
 
-- Unauthenticated phone sees the portal and cannot browse around it (IPv4 and IPv6 checked).
-- Unsold, void and invalid vouchers fail. Sold voucher connects only its first bound device.
-- Short test package disconnects at its absolute deadline while actively browsing.
-- Disconnect/reconnect does not extend expiry. A second device cannot reuse the code.
-- VPS/tunnel outage and router reboot do not extend entitlement or permit expired re-login.
-- Download/upload speed tests match the package; two clients share the line as intended.
-- Cash sale, receipt, copying and customer handover work; no simulation banner remains after a genuine live implementation is enabled.
-- Customer cannot reach router admin, staff LAN, private VPN or other customers.
-- Revoke and recovery behavior are accurately displayed and verified on the router.
-- Backups, restart recovery and a staff recovery connection are tested.
+In WinBox Files, download a backup of the existing HotSpot folder. Upload the generated `login.html`, `flogin.html`, `status.html`, `logout.html`, `alogin.html` to that SAME directory, preserving its existing `md5.js` and other RouterOS files. If the directory is `flash/hotspot`, upload there and keep the matching profile html-directory. Do not reset HTML after uploading: that would overwrite the branded pages. The supplied pages use the confirmed customer gateway 10.78.0.1. A different deployment must adjust that address in `scripts/build-hotspot.ts` and the public web portal link.
 
-Until those pass, use test vouchers and keep the system in preparation mode. Do not promise a guaranteed launch time before testing the physical equipment.
+Customers see the branded code-only page locally; the cloud `/portal` page directs customers onto shop Wi-Fi and to the local login. Voucher codes are never sent to a browser-supplied router URL or trusted based on query-string MAC addresses.
 
-## Official references
+## 4. Configure the router (WinBox, while on management Wi-Fi)
 
-- https://help.mikrotik.com/docs/spaces/ROS/pages/47579162/REST+API
-- https://help.mikrotik.com/docs/spaces/ROS/pages/56459266/HotSpot+-+Captive+portal
-- https://manual.mikrotik.com/docs/authentication-authorization-accounting/hotspot-captive-portal/hotspot-customisation/
-- https://manual.mikrotik.com/docs/virtual-private-networks/wireguard/
+First create the dedicated RADIUS user profile, ONCE:
+
+```routeros
+/ip hotspot user profile add name=babu-vouchers shared-users=1 add-mac-cookie=no
+```
+
+In **RADIUS → New**, set:
+
+| Field | Value |
+|---|---|
+| Service | hotspot ONLY |
+| Address | 10.77.0.1 |
+| Src. Address | 10.77.0.2 |
+| Authentication Port | 1812 |
+| Accounting Port | 1813 |
+| Timeout | 3 seconds |
+| Secret | The new private value from .env.radius |
+| Require Message Auth | yes-for-request-resp |
+
+Do not enable the `login` service: staff/router management does not use voucher authentication. Do not weaken Message-Authenticator requirements to bypass a failed check. Check existing RADIUS entries so this service is selected for HotSpot.
+
+Then:
+
+```routeros
+/ip hotspot profile set [find name="babu-hotspot-profile"] use-radius=yes radius-accounting=yes radius-interim-update=1m login-by=http-chap
+/ip hotspot user disable [find name="babu-test"]
+```
+
+A matching local HotSpot username takes precedence over RADIUS. Do not create local users named after voucher codes. No router API write permission is needed; keep `babu-api-check` read-only.
+
+Restrict MAC-based router administration and discovery to the existing management LAN list, after confirming it contains only `bridge`, not `babu-guest`:
+
+```routeros
+/tool mac-server set allowed-interface-list=LAN
+/tool mac-server mac-winbox set allowed-interface-list=LAN
+/ip neighbor discovery-settings set discover-interface-list=LAN
+```
+
+The IPv4 firewall does not provide wireless client-to-client isolation within the EAP. Enable client isolation on both EAP SSIDs and protect EAP management before public launch. Keep IPv6 unavailable on the guest segment (no RA/DHCPv6/global forwarding) unless separately filtered; RouterOS HotSpot authorizes IPv4. Verify private addresses 192.168.88.1, 192.168.100.1 and 10.77.0.1 are unreachable from the customer device.
+
+## 5. Commission using a NEW sold voucher
+
+Use an explicitly labelled commissioning package/batch and your established cash-sale workflow. Sales remain real records; do not silently delete test receipts or reverse an activated sale.
+
+1. Prepare a short package (e.g. 2 minutes) with 5 Mbps down / 2 Mbps up. Generate fresh stock. An unsold code must fail and must not create an access grant.
+2. Record a sale, then use that code on the branded Wi-Fi page with mobile data OFF. Verify it gets internet, an ACTIVE grant and one fixed expiry in Access Grants.
+3. In WinBox check `/ip hotspot active print` and `/queue simple print`; confirm the correct user, remaining time and rates. Run a phone speed test.
+4. Disconnect after part of the allowance. Reconnect with the same code/device. Remaining time must decrease, never reset. A second MAC must be rejected.
+5. Wait beyond the ORIGINAL expiry. Existing browsing must stop, and the code must fail permanently even after logout/reconnect or a router reboot. A new sold code should work.
+6. Stop RADIUS briefly: new logins must fail closed; an existing session must still end at its previously issued timeout. Restart and confirm expired codes stay rejected.
+7. Enable live mode for API/web below, then open **Wi-Fi Sessions**. Start/interim/stop packets should appear, with upload/download totals increasing about once per minute. Do not infer an active connection from a stale report.
+8. Confirm customer isolation and branded login on both 2.4 GHz and 5 GHz.
+
+If authentication fails, inspect `/radius monitor [find service=hotspot]` (or select the entry in WinBox) for timeouts, rejects and bad replies; do not print the secret. Timeout: inspect WireGuard, host listeners and service DB reachability. Bad replies: check the exact secret and Message-Authenticator. Reject: check code state, prior activation, MAC, expiry and CHAP login. The service intentionally does not log codes/passwords or send detailed voucher-state errors to customers.
+
+## 6. Enable the deployed portal
+
+After the radius service/migration/router setup are ready, set these in `.env.api`:
+
+```dotenv
+NETWORK_PROVIDER=mikrotik
+OMADA_MODE=live
+MIKROTIK_RADIUS_ENABLED=true
+```
+
+Set `.env.web` to `NETWORK_PROVIDER=mikrotik`, `OMADA_MODE=live`, `WIFI_BRAND="JIACHIE WIFI"`. Preserve APP_ORIGIN/ORIGIN=https://jiachie-wifi.com and all existing secrets. Rebuild/recreate api, worker and web with the existing Compose stack (`up -d --build --no-deps api worker web`). Leave Caddy alone. Keep radius running with `.env.radius`.
+
+The legacy variable name OMADA_MODE remains for compatibility; it selects mock/live for the chosen NETWORK_PROVIDER. The worker no longer dispatches Omada-style authorization for live MikroTik. Browser calls to the old redemption endpoint are rejected in MikroTik live mode.
+
+## What the portal tracks (and limits)
+
+Sales, stock, immutable voucher terms, device binding, activation and permanent expiry stay in the existing portal. **Wi-Fi Sessions** adds router-reported session start/last update/stop, duration and cumulative uploaded/downloaded bytes. Counters survive duplicate/out-of-order reports without double-counting. Reports are not a browser history and do not claim to identify websites visited. Router reboot/outage can lose accounting packets; after three minutes without a report the UI says STALE rather than claiming online. Old records have no retroactive traffic data.
+
+Revoking a grant rejects future logins. This release does NOT implement an immediate RADIUS Disconnect-Message: an existing session may continue until its issued deadline. For immediate operator intervention remove the matching session in WinBox → IP → Hotspot → Active, and keep its grant revoked. A session timer, not the accounting worker, enforces automatic expiry.
+
+Rollback: stop the radius service, set use-radius=no on the HotSpot profile and restore portal mock mode; leave guest drop rules and no local fallback users. Existing authenticated sessions continue to their issued deadline unless removed manually. Do not drop the additive migration or restore voucher keys to older values. Do not present simulation mode alone as a way of stopping the separately running RADIUS service.

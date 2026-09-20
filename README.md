@@ -1,8 +1,8 @@
-> **MikroTik L009 preparation:** see [VPS deployment and launch checklist](docs/mikrotik-launch.md). This release adds 150 Mbps capacity planning, package speed snapshots and read-only router checks. MikroTik live authorization is still pending implementation and hardware commissioning; keep simulation mode enabled. You deploy the VPS yourself.
+> **MikroTik vouchers:** branded code-only HotSpot login, private RADIUS authentication, fixed expiry, device binding, speed limits and session accounting are implemented. See the [deployment and hardware acceptance guide](docs/mikrotik-launch.md). Deploy and complete the voucher tests before serving customers.
 
 # BABU-SHOP WIFI
 
-A single-shop prepaid Wi-Fi voucher counter for Tanzania. Administrators prepare packages and stock; cashiers record cash sales and print vouchers; customers redeem sold codes through an Omada external portal. MikroTik remains the upstream router/firewall. No payment gateway, wallet, subscription, RADIUS, multi-tenant administration or MikroTik Hotspot billing.
+A single-shop prepaid Wi-Fi voucher counter for Tanzania. Administrators prepare packages and stock; cashiers record cash sales and print vouchers; customers redeem sold codes through a branded MikroTik HotSpot page, authenticated by the portal’s private RADIUS service. The existing Omada external-portal adapter remains available. No payment gateway, wallet or multi-tenant administration.
 
 ## Run locally
 

@@ -1,4 +1,5 @@
 import https from 'node:https';
+import {checkMikroTik} from '../../network/src/index.ts';
 import {readFileSync} from 'node:fs';
 export type Context={clientMac:string;clientIp?:string;apMac:string;ssidName:string;radioId:string;site:string};
 export type Outcome={status:'accepted'|'rejected'|'unknown';evidence:{code:string}};
@@ -44,9 +45,15 @@ export class LiveAdapter implements Adapter {
  async test(){try{await this.login();return {ok:true,message:'Operator login verified. This does not verify client expiry or AP enforcement.'};}catch{return {ok:false,message:'Controller login failed. Check private connectivity, TLS and operator configuration.'};}}
  capabilities(){return {mode:this.mode,profile:this.config.profile,expiry:'operator-commissioned',lookup:'unsupported',disconnect:'unsupported',reconciliation:'unsupported',rateLimits:false};}
 }
+export class MikroTikRadiusAdapter implements Adapter {
+ mode='live' as const;
+ async authorize():Promise<Outcome>{return {status:'rejected',evidence:{code:'USE_MIKROTIK_RADIUS_LOGIN'}};}
+ test(){return checkMikroTik();}
+ capabilities(){return {mode:this.mode,expiry:'fixed-deadline-radius',lookup:'accounting',disconnect:'unsupported',reconciliation:'accounting',rateLimits:true};}
+}
 export function adapterFromEnv():Adapter{
  if(process.env.OMADA_MODE==='mock')return new MockAdapter(process.env.OMADA_MOCK_SCENARIO||'success');
- if(process.env.NETWORK_PROVIDER==='mikrotik')throw new Error('MikroTik live authorization is not commissioned. Keep OMADA_MODE=mock until the MikroTik access integration is implemented and verified on hardware.');
+ if(process.env.NETWORK_PROVIDER==='mikrotik'){if(process.env.OMADA_MODE!=='live'||process.env.MIKROTIK_RADIUS_ENABLED!=='true')throw new Error('MikroTik RADIUS is not commissioned. Explicitly enable MIKROTIK_RADIUS_ENABLED and live mode after deployment.');return new MikroTikRadiusAdapter();}
  if(process.env.OMADA_MODE!=='live')throw new Error('OMADA_MODE must be explicitly mock or live');
  return new LiveAdapter({baseUrl:process.env.OMADA_BASE_URL||'',controllerId:process.env.OMADA_CONTROLLER_ID||'',username:process.env.OMADA_OPERATOR_USERNAME||'',password:process.env.OMADA_OPERATOR_PASSWORD||'',profile:process.env.OMADA_PROFILE as LiveConfig['profile'],timeUnit:process.env.OMADA_TIME_UNIT as LiveConfig['timeUnit'],timeMeaning:process.env.OMADA_TIME_MEANING as LiveConfig['timeMeaning'],fieldType:process.env.OMADA_FIELD_TYPE as LiveConfig['fieldType'],expiryVerified:process.env.OMADA_EXPIRY_VERIFIED==='true',caPath:process.env.OMADA_CA_PATH});
 }
