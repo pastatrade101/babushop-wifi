@@ -7,6 +7,12 @@ export const BatchInput=T.Object({package_id:Id,quantity:T.Integer({minimum:1,ma
 export const ReservationInput=T.Object({package_id:Id,quantity:T.Integer({minimum:1,maximum:100})},{additionalProperties:false});
 export const SaleInput=T.Object({reservation_id:Id,cash_received:T.Boolean(),customer_name:T.Optional(T.String({maxLength:100})),customer_phone:T.Optional(T.String({maxLength:30})),notes:T.Optional(T.String({maxLength:500}))},{additionalProperties:false});
 export const ContextInput=T.Object({clientMac:Text(32),apMac:Text(32),ssidName:Text(64),radioId:Text(2),site:Text(100),clientIp:T.Optional(Text(64))},{additionalProperties:false});
+// Self-service purchase. The phone is optional and only forwarded to the payment
+// provider so the buyer recognises the charge; it is never required to buy.
+export const PurchaseInput=T.Object({package_id:Id,phone:T.Optional(T.String({maxLength:30}))},{additionalProperties:false});
+// The claim token is the buyer's only handle on their purchase. It is POSTed,
+// never placed in a URL, so it cannot leak through history, logs or a referrer.
+export const ClaimInput=T.Object({claim_token:Text(200)},{additionalProperties:false});
 export const Paging=T.Object({page:T.Optional(T.Integer({minimum:1,maximum:100000})),q:T.Optional(T.String({maxLength:100})),state:T.Optional(T.String({maxLength:30})),sort:T.Optional(T.Union([T.Literal('newest'),T.Literal('oldest')])),from:T.Optional(T.String({format:'date'})),to:T.Optional(T.String({format:'date'}))},{additionalProperties:false});
 export const Params=T.Object({id:Id},{additionalProperties:false});
 // Explicit selected columns are the response allowlist. Nested JSON is confined to sanitized evidence.

@@ -8,6 +8,8 @@ import {createClient} from '@supabase/supabase-js';
 import {pool,tx,audit,Problem,requireValue,SITE,type Staff} from '../../../packages/database/src/index.ts';
 import * as sales from '../../../packages/database/src/sales.ts';
 import * as access from '../../../packages/database/src/access.ts';
+import * as purchases from '../../../packages/database/src/purchases.ts';
+import {paymentsEnabled} from '../../../packages/payments/src/index.ts';
 import {digest,csvCell} from '../../../packages/database/src/crypto.ts';
 import {type Adapter,adapterFromEnv} from '../../../packages/omada/src/index.ts';
 import * as S from '../../../packages/contracts/src/index.ts';
@@ -17,6 +19,9 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
  const supabase=options.verifyToken?null:createClient(process.env.SUPABASE_URL!,process.env.SUPABASE_PUBLISHABLE_KEY!,{auth:{persistSession:false,autoRefreshToken:false}});
  const verify=options.verifyToken||(async(token:string)=>{const {data,error}=await supabase!.auth.getUser(token);return error?null:data.user?.id||null;});
  app.decorateRequest('staff',null);
+ // Keep the raw JSON alongside the parsed body: the payment webhook's HMAC is
+ // computed over the exact bytes sent, which re-serializing would not reproduce.
+ app.addContentTypeParser('application/json',{parseAs:'string'},(req:any,body,done)=>{req.rawBody=body;try{done(null,body?JSON.parse(body as string):{});}catch{done(new Problem(400,'Invalid JSON body'),undefined);}});
  await app.register(helmet,{contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'"]}}});
  await app.register(rateLimit,{max:600,timeWindow:'1 minute',keyGenerator:r=>r.ip});
  await app.register(swagger,{openapi:{info:{title:'BABU-SHOP WIFI API',version:'1.0.0'},components:{securitySchemes:{staffToken:{type:'http',scheme:'bearer'}}}}});
@@ -79,5 +84,17 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
  route('POST','/portal/context',S.ContextInput,T.Object({context_token:T.String(),expires_in:T.Integer()}),async(r:any)=>access.createContext(r.body),false,{config:{rateLimit:{max:300,timeWindow:'1 minute'}}});
  route('POST','/portal/redeem',T.Object({code:T.String({minLength:16,maxLength:40}),context_token:S.Text(100)},{additionalProperties:false}),T.Object({status_token:T.String(),state:T.String()}),async(r:any)=>access.redeem(r.body.code,r.body.context_token),false,{config:{rateLimit:{hook:'preHandler',max:15,timeWindow:'1 minute',keyGenerator:(r:any)=>digest(r.body?.context_token||r.ip,'PORTAL_CONTEXT_SECRET')}}});
  route('POST','/portal/status',T.Object({status_token:S.Text(100)},{additionalProperties:false}),T.Object({state:T.String(),expires_at:T.Union([T.String(),T.Null()]),attempt_state:T.Union([T.String(),T.Null()])}),async(r:any)=>access.status(r.body.status_token),false,{config:{rateLimit:{hook:'preHandler',max:120,timeWindow:'1 minute',keyGenerator:(r:any)=>digest(r.body?.status_token||r.ip,'PORTAL_CONTEXT_SECRET')}}});
+ // Self-service purchase. Unauthenticated by design -- a customer buying a
+ // voucher has no account. Cash sales at the counter are unaffected.
+ route('GET','/portal/shop',undefined,T.Object({enabled:T.Boolean(),items:T.Array(T.Any())},{additionalProperties:false}),async()=>({enabled:paymentsEnabled(),...(paymentsEnabled()?await purchases.catalogue():{items:[]})}),false,{config:{rateLimit:{max:120,timeWindow:'1 minute'}}});
+ route('POST','/portal/purchase',S.PurchaseInput,T.Object({reference:T.String(),claim_token:T.String(),checkout_url:T.String(),amount_tzs:T.Integer(),expires_at:T.String()},{additionalProperties:false}),async(r:any)=>purchases.start(r.body),false,{config:{rateLimit:{max:10,timeWindow:'1 minute'}}});
+ route('POST','/portal/purchase/status',S.ClaimInput,T.Object({status:T.String(),code:T.Union([T.String(),T.Null()]),package_name:T.Union([T.String(),T.Null()]),duration_minutes:T.Optional(T.Integer()),message:T.Union([T.String(),T.Null()])},{additionalProperties:false}),async(r:any)=>purchases.status(r.body.claim_token),false,{config:{rateLimit:{hook:'preHandler',max:120,timeWindow:'1 minute',keyGenerator:(r:any)=>digest(r.body?.claim_token||r.ip,'PORTAL_CONTEXT_SECRET')}}});
+ // Authenticated by HMAC over the raw body, not a staff token. Always answers
+ // 200 once the signature is valid, so the provider stops retrying a delivered
+ // event; failures are recorded rather than surfaced to the provider.
+ app.post('/api/v1/portal/payments/webhook/snippe',{config:{rateLimit:{max:240,timeWindow:'1 minute'}}},async(r:any,reply:any)=>{
+  try{return await purchases.webhook(r.rawBody??'',r.headers);}
+  catch(e:any){const status=e instanceof Problem?e.status:500;if(status===401)return reply.code(401).send({error:'Invalid signature'});app.log?.error?.({err:'webhook'},'payment webhook failed');return reply.code(status===400?400:500).send({error:'Could not process the event'});}
+ });
  return app;
 }
