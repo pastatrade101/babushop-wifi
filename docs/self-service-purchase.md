@@ -101,6 +101,19 @@ router's Files root, then run in **WinBox → New Terminal**:
 /import file-name=purchase-access.rsc
 ```
 
+The current script prints **JIACHIE purchase access v2** before doing anything.
+If an earlier import said "Expected one BABU commissioning block outbound" even
+though that rule is present and enabled, replace the uploaded script with this
+revision. It looks up each comment separately, counts returned IDs by iteration,
+and then validates enabled state, chain, action, interfaces and rule order with
+`get`. It does not rely on a compound `find` expression or the length of an ID.
+The original failed import stopped before changing any rules.
+
+To avoid accidentally importing the old upload, save/upload this revision as
+`purchase-access-v2.rsc`, then run `/import file-name=purchase-access-v2.rsc`.
+Success also prints the purchase address list, HotSpot exception and forward
+counter. Confirm resolved IPv4 entries appear below both DNS hostnames.
+
 This script is specific to the existing `babu-guest` / `babu-hotspot` setup.
 It checks the expected firewall anchors before adding anything. It creates a
 DNS-backed `jiachie-purchase` address list for `jiachie-wifi.com` and `snippe.me`,
