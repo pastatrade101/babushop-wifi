@@ -26,3 +26,39 @@ label{display:flex;flex-direction:column;gap:7px;font-weight:600;font-size:.79re
 .card-head p{margin:3px 0 0}
 .card-head .small-button{flex-shrink:0}
 @media(max-width:900px){.chart-grid{grid-template-columns:1fr}}
+
+/* ── Voucher sheet ───────────────────────────────────────────────────────
+   Screen preview is a responsive grid; print is a fixed A4 grid of 24 cards
+   (3 x 8). A4 usable area at an 8mm margin is 194 x 281mm, so each card is
+   64.7 x 34.2mm -- wide enough for a 19-character code at 11pt monospace
+   (~44mm) with padding either side, which is what sets the column count. */
+.voucher-sheet{grid-template-columns:repeat(auto-fill,minmax(235px,1fr));gap:12px}
+.printed-voucher{padding:13px 15px;display:flex;flex-direction:column;gap:3px}
+.pv-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.pv-brand{font-size:.6rem;letter-spacing:.14em;font-weight:750;color:#3f6b52;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pv-price{font-size:.78rem;font-weight:750;color:#1e4634;white-space:nowrap}
+.pv-package{font-size:.9rem;font-weight:700;margin:1px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.printed-voucher .voucher-code{margin:5px 0 3px;font-size:1.02rem;letter-spacing:.04em;color:#123d34}
+.pv-meta{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:.7rem;color:#5f7568;font-weight:600}
+.pv-how{font-size:.68rem;color:#63766a;margin:2px 0 0}
+.pv-how strong{color:#2c5a43;font-weight:650}
+.pv-foot{display:flex;justify-content:space-between;gap:8px;font-size:.62rem;color:#84958a;margin-top:auto;padding-top:5px}
+.pv-foot span:last-child{font-weight:650;color:#4a6b55;white-space:nowrap}
+
+@media print{
+ .voucher-sheet{display:grid;grid-template-columns:repeat(3,1fr);gap:0;
+  border-top:1px dashed #b0b0b0;border-left:1px dashed #b0b0b0}
+ /* Cut guides are shared edges, so neighbouring cards never double up a line. */
+ .printed-voucher{border:0;border-right:1px dashed #b0b0b0;border-bottom:1px dashed #b0b0b0;border-radius:0;
+  height:34.2mm;padding:2.4mm 3mm;gap:0;justify-content:flex-start;break-inside:avoid;overflow:hidden}
+ .pv-brand{font-size:5.4pt;color:#000}
+ .pv-price{font-size:6.4pt;color:#000}
+ .pv-package{font-size:8pt;margin:.4mm 0 0;color:#000}
+ .printed-voucher .voucher-code{font-size:11pt;margin:1.2mm 0 .8mm;color:#000;letter-spacing:.02em}
+ .pv-meta{font-size:5.6pt;gap:0 3mm;color:#333}
+ .pv-how{font-size:5.4pt;margin:.3mm 0 0;color:#333}
+ .pv-how strong{color:#000}
+ .pv-foot{font-size:4.9pt;color:#555;padding-top:.6mm;margin-top:auto}
+ .pv-foot span:last-child{color:#000}
+ .printed-voucher .badge{font-size:5pt;padding:.3mm 1mm;margin-top:.5mm}
+}

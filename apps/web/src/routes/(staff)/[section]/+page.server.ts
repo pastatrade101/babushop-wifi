@@ -27,6 +27,13 @@ export const actions={default:async(event:any)=>{const f=await event.request.for
  if(op==='batch'){const b=await api(event,'/voucher-batches',{package_id:get('package_id'),quantity:Number(get('quantity')),label:get('label')});return {message:'Voucher batch created.',batch:b};}
  if(op==='reserve'){const reservation=await api(event,'/sales/reserve',{package_id:get('package_id'),quantity:Number(get('quantity'))});return {reservation,idempotency_key:randomUUID()};}
  if(op==='sell'){const s=await api(event,'/sales',{reservation_id:get('reservation_id'),cash_received:get('cash_received')==='on',customer_name:get('customer_name'),customer_phone:get('customer_phone'),notes:get('notes')},'POST',{'idempotency-key':get('idempotency_key')});return {sale:await api(event,'/sales/'+s.id),printed:await api(event,'/sales/'+s.id+'/print',{}),message:'Cash sale recorded. Print the receipt and vouchers below.'};}
+ // Issuing sells every remaining voucher in the batch and books the revenue,
+ // because access.ts refuses a voucher that is not SOLD -- an unissued card
+ // would print fine and then fail to connect anyone.
+ if(op==='issue-batch'){
+  const result=await api(event,'/voucher-batches/'+id+'/issue',{});
+  return {printed:{items:result.items},issued:result.issued,issuedTotal:result.total_tzs};
+ }
  if(op==='print-batch'||op==='print-sale'){const type=op==='print-batch'?'voucher-batches':'sales';return {printed:await api(event,'/'+type+'/'+id+'/print',{}),...(type==='sales'?{sale:await api(event,'/sales/'+id)}:{}),message:'Print preview ready. This access has been audited.'};}
  if(op==='reveal')return {printed:await api(event,'/vouchers/'+id+'/reveal',{}),message:'Voucher revealed. This access has been audited.'};
  if(op==='void'||op==='reverse'||op==='revoke'){const path=op==='void'?'vouchers':op==='reverse'?'sales':'access-grants';const response=await api(event,'/'+path+'/'+id+'/'+op,{reason:get('reason')});return {message:response.message||(op==='reverse'?'Sale reversed; all codes permanently voided.':'Change saved.')};}

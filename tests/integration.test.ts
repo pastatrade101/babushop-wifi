@@ -5,7 +5,7 @@ import {beforeAll,afterAll,it,expect} from 'vitest';
 import {readFile,readdir} from 'node:fs/promises';
 import {createHash,randomUUID} from 'node:crypto';
 import {pool,SITE,type Staff} from '../packages/database/src/index.ts';
-import {generateBatch,reserve,sell,reveal,reverse} from '../packages/database/src/sales.ts';
+import {generateBatch,reserve,sell,reveal,reverse,issueBatch} from '../packages/database/src/sales.ts';
 import {createContext,redeem,status,processOne,housekeeping,revoke} from '../packages/database/src/access.ts';
 import {MockAdapter,MikroTikRadiusAdapter} from '../packages/omada/src/index.ts';
 import {buildApp} from '../apps/api/src/app.ts';
@@ -114,4 +114,36 @@ it('trend zero-fills quiet days and by-package ranks revenue',async()=>{
  expect((await app.inject({url:'/api/v1/reports/trend',headers:{authorization:'Bearer cashier'}})).statusCode).toBe(403);
  // Out-of-range windows are rejected by the schema, not clamped silently.
  expect((await app.inject({url:'/api/v1/reports/trend?days=999',headers:{authorization:'Bearer admin'}})).statusCode).toBe(400);
+});
+it('issuing a batch by printing sells it once and makes the codes usable',async()=>{
+ const s=await stock(3);
+ // Before issuing, a printed card must not connect anyone.
+ const c0=await createContext({...ctx,clientMac:'AA:00:00:00:00:41'});
+ await expect(redeem(s.codes[0].code,c0.context_token)).rejects.toThrow('cannot be used');
+ const first=await issueBatch(admin,s.b.id);
+ expect(first.issued).toBe(3);
+ expect(first.total_tzs).toBe(3000);                       // 3 x 1000
+ expect(first.items).toHaveLength(3);
+ expect(first.items.every((v:any)=>v.inventory_state==='SOLD')).toBe(true);
+ expect(first.items.every((v:any)=>/^[A-Z0-9]{4}(-[A-Z0-9]{4}){3}$/.test(v.code))).toBe(true);
+ // Revenue booked once, under the printing administrator, as a counter cash sale.
+ const sale=(await pool.query("select * from wifi.manual_sales where notes like 'Issued by printing batch%' order by created_at desc limit 1")).rows[0];
+ expect(sale.total_tzs).toBe(3000);
+ expect(sale.cashier_id).toBe(admin.id);
+ expect(sale.channel).toBe('COUNTER');
+ expect(sale.payment_method).toBe('CASH');
+ // Reprinting must not double-count: no new sale, same codes returned.
+ const before=(await pool.query('select count(*)::int n from wifi.manual_sales')).rows[0].n;
+ const second=await issueBatch(admin,s.b.id);
+ expect(second.issued).toBe(0);
+ expect(second.total_tzs).toBe(0);
+ expect(second.items.map((v:any)=>v.code).sort()).toEqual(first.items.map((v:any)=>v.code).sort());
+ expect((await pool.query('select count(*)::int n from wifi.manual_sales')).rows[0].n).toBe(before);
+ // And now the card actually works.
+ const c1=await createContext({...ctx,clientMac:'AA:00:00:00:00:42'});
+ const r=await redeem(first.items[0].code,c1.context_token);
+ expect(r.state).toBeTruthy();
+ await processOne(new MockAdapter());
+ // Cashiers cannot issue stock and book revenue.
+ await expect(issueBatch(cashier,s.b.id)).rejects.toThrow('Administrator');
 });

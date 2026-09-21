@@ -37,3 +37,40 @@ export async function reveal(staff:Staff,filter:{voucher_id?:string;batch_id?:st
 }
 export async function voidVoucher(staff:Staff,id:string,reason:string){return tx(async db=>{const v=(await db.query('select * from wifi.vouchers where id=$1 for update',[id])).rows[0];requireValue(v?.inventory_state==='AVAILABLE'&&(!v.reserved_until||new Date(v.reserved_until).getTime()<Date.now()),409,'Only unreserved available stock can be voided');await db.query("update wifi.vouchers set inventory_state='VOID' where id=$1",[id]);await audit(db,staff.id,'VOUCHER_VOIDED',id,{reason});return {ok:true};});}
 export async function saleDetail(staff:Staff,id:string){const sale=(await pool.query('select s.*,p.display_name cashier_name,r.reason reversal_reason from wifi.manual_sales s join wifi.staff_profiles p on p.id=s.cashier_id left join wifi.sale_reversals r on r.sale_id=s.id where s.id=$1 and ($2::boolean or cashier_id=$3)',[id,staff.role==='ADMIN',staff.id])).rows[0];requireValue(sale,404,'Sale not found');return {...sale,items:(await pool.query('select i.*,v.code_mask from wifi.manual_sale_items i join wifi.vouchers v on v.id=i.voucher_id where sale_id=$1',[id])).rows};}
+/**
+ * Issue a whole batch by printing it: every still-available voucher is sold in
+ * one transaction under the printing administrator, then the codes are returned
+ * for the sheet.
+ *
+ * Printing has to sell them, not just reveal them -- access.ts refuses any
+ * voucher that is not SOLD, so a printed-but-unsold card would simply not
+ * connect anyone. The consequence is that revenue is booked when the sheet is
+ * printed, not when each card is handed over.
+ *
+ * Safe to run twice: the second call finds nothing available, creates no second
+ * sale, and just reveals the same codes.
+ */
+export async function issueBatch(staff:Staff,batchId:string){
+ return tx(async db=>{
+  requireValue(staff.role==='ADMIN',403,'Administrator permission required');
+  const batch=(await db.query('select * from wifi.voucher_batches where id=$1',[batchId])).rows[0];
+  requireValue(batch,404,'Batch not found');
+  // Serialise concurrent prints of the same batch so two sheets cannot both sell it.
+  await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[batchId]);
+  const available=(await db.query("select * from wifi.vouchers where batch_id=$1 and inventory_state='AVAILABLE' and (reserved_until is null or reserved_until<now()) order by created_at,id for update",[batchId])).rows;
+  let sale=null;
+  if(available.length){
+   const reservation=(await db.query("insert into wifi.sale_reservations(staff_id,channel,expires_at) values($1,'COUNTER',now()+interval '5 minutes') returning *",[staff.id])).rows[0];
+   await db.query('update wifi.vouchers set reservation_id=$1,reserved_until=$2 where id=any($3::uuid[])',[reservation.id,reservation.expires_at,available.map(v=>v.id)]);
+   sale=(await db.query("insert into wifi.manual_sales(receipt_number,cashier_id,site_id,reservation_id,total_tzs,payment_method,channel,notes) values($1,$2,$3,$4,$5,'CASH','COUNTER',$6) returning *",
+    ['JW-'+randomUUID().toUpperCase(),staff.id,SITE,reservation.id,available.reduce((a,v)=>a+v.price_tzs,0),'Issued by printing batch '+(batch.label||batch.id)])).rows[0];
+   for(const v of available)await db.query('insert into wifi.manual_sale_items(sale_id,voucher_id,package_name,price_tzs,duration_minutes,download_mbps,upload_mbps) values($1,$2,$3,$4,$5,$6,$7)',
+    [sale.id,v.id,v.package_name,v.price_tzs,v.duration_minutes,v.download_mbps,v.upload_mbps]);
+   await db.query("update wifi.vouchers set inventory_state='SOLD',sold_at=now(),reserved_until=null where reservation_id=$1",[reservation.id]);
+   await audit(db,staff.id,'BATCH_ISSUED',batchId,{quantity:available.length,total_tzs:sale.total_tzs});
+  }
+  const rows=(await db.query('select v.id,v.code_encrypted,v.package_name,v.price_tzs,v.duration_minutes,v.download_mbps,v.upload_mbps,v.inventory_state from wifi.vouchers v where v.batch_id=$1 order by v.created_at,v.id',[batchId])).rows;
+  await audit(db,staff.id,'BATCH_PRINTED',batchId,{count:rows.length});
+  return {issued:available.length,total_tzs:sale?sale.total_tzs:0,items:rows.map(({code_encrypted,...r})=>({...r,code:present(decrypt(code_encrypted))}))};
+ });
+}
