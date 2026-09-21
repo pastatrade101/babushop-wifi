@@ -75,6 +75,31 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
  route('GET','/dashboard',undefined,S.Row,async(r:any)=>r.staff.role==='ADMIN'?{...await totals(),...await inventory()}:await inventory());
  route('GET','/reports/sales',undefined,S.Row,async(r:any)=>totals(r.query.from,r.query.to),true,{schema:{querystring:S.Paging}});
  route('GET','/reports/inventory',undefined,S.Row,inventory,true);
+ // Daily buckets in shop time, zero-filled so a quiet day is a gap at zero
+ // rather than a missing point the chart would interpolate straight through.
+ route('GET','/reports/trend',undefined,S.Trend,async(r:any)=>{
+  const days=Math.min(Math.max(Number(r.query.days)||30,7),180);
+  const rows=(await pool.query(`with span as (
+    select generate_series(((now() at time zone 'Africa/Dar_es_Salaam')::date-($1::int-1)),(now() at time zone 'Africa/Dar_es_Salaam')::date,interval '1 day')::date d)
+   select to_char(d,'YYYY-MM-DD') as "day",
+    coalesce((select sum(s.total_tzs) from wifi.manual_sales s where (s.created_at at time zone 'Africa/Dar_es_Salaam')::date=d),0)::float8 gross_tzs,
+    coalesce((select sum(s.total_tzs) from wifi.sale_reversals v join wifi.manual_sales s on s.id=v.sale_id where (v.created_at at time zone 'Africa/Dar_es_Salaam')::date=d),0)::float8 reversed_tzs,
+    coalesce((select count(*) from wifi.manual_sale_items i join wifi.manual_sales s on s.id=i.sale_id where (s.created_at at time zone 'Africa/Dar_es_Salaam')::date=d),0)::int vouchers_sold
+   from span order by d`,[days])).rows;
+  return {items:rows.map(v=>({day:v.day,gross_tzs:v.gross_tzs,net_tzs:v.gross_tzs-v.reversed_tzs,vouchers_sold:v.vouchers_sold}))};
+ },true,{schema:{querystring:S.TrendQuery}});
+ // Revenue by package. Capped at ten bars: past that a ranked bar chart stops
+ // being readable, and the remainder is rolled into one "Other" row.
+ route('GET','/reports/by-package',undefined,S.PackageBreakdown,async(r:any)=>{
+  const days=Math.min(Math.max(Number(r.query.days)||30,7),180);
+  const rows=(await pool.query(`select i.package_name,count(*)::int vouchers,sum(i.price_tzs)::float8 revenue_tzs
+   from wifi.manual_sale_items i join wifi.manual_sales s on s.id=i.sale_id
+   where s.created_at>=(now() at time zone 'Africa/Dar_es_Salaam')::date-($1::int-1)
+   group by 1 order by revenue_tzs desc`,[days])).rows;
+  if(rows.length<=10)return {items:rows};
+  const rest=rows.slice(10).reduce((a,v)=>({vouchers:a.vouchers+v.vouchers,revenue_tzs:a.revenue_tzs+v.revenue_tzs}),{vouchers:0,revenue_tzs:0});
+  return {items:[...rows.slice(0,10),{package_name:'Other',...rest}]};
+ },true,{schema:{querystring:S.TrendQuery}});
  route('GET','/staff',undefined,S.List,async(r:any)=>paged('select id,display_name,role,enabled,created_at from wifi.staff_profiles where display_name ilike $1',['%'+(r.query.q||'')+'%'],r.query),true,{schema:{querystring:S.Paging}});
  route('PATCH','/staff/:id',T.Object({role:T.Union([T.Literal('ADMIN'),T.Literal('CASHIER')]),enabled:T.Boolean()},{additionalProperties:false}),S.Row,async(r:any)=>tx(async db=>{requireValue(r.params.id!==r.staff.id,409,'Ask another administrator to change your own access');await db.query('select pg_advisory_xact_lock(884421)');const p=(await db.query('update wifi.staff_profiles set role=$2,enabled=$3 where id=$1 returning id,display_name,role,enabled',[r.params.id,r.body.role,r.body.enabled])).rows[0];requireValue(p,404,'Staff member not found');await audit(db,r.staff.id,'STAFF_ACCESS_CHANGED',p.id,r.body);return p;}),true,{schema:{params:S.Params}});
  route('GET','/audit',undefined,S.List,async(r:any)=>paged('select id,actor_id,action,entity_id,created_at from wifi.audit_logs',[],r.query),true,{schema:{querystring:S.Paging}});

@@ -1,6 +1,9 @@
 <script lang="ts">
 import Icon from '$lib/components/Icon.svelte';
+import TrendChart from '$lib/components/TrendChart.svelte';
+import RankChart from '$lib/components/RankChart.svelte';
 let {data}=$props();
+const compact=(n:number)=>n>=1000000?(n/1000000).toFixed(1)+'M':n>=1000?Math.round(n/1000)+'k':String(Math.round(n));
 const money=(n:number)=>new Intl.NumberFormat('en-TZ').format(n||0);
 const date=(d:string)=>new Intl.DateTimeFormat('en-TZ',{dateStyle:'medium',timeStyle:'short',timeZone:'Africa/Dar_es_Salaam'}).format(new Date(d));
 const admin=$derived(data.staff.role==='ADMIN');
@@ -19,4 +22,20 @@ const networkLabel=$derived(data.mode!=='live'?'Portal test mode':data.networkPr
  <section class="panel action-panel"><div class="section-heading"><div><p class="eyebrow">AT THE COUNTER</p><h2>Keep your shop moving.</h2></div><Icon name="sales" size={22}/></div><div class="quick-actions"><a href="/sell"><span class="action-icon"><Icon name="plus"/></span><span><strong>Make a sale</strong><small>Reserve vouchers and record cash</small></span><Icon name="arrow" size={17}/></a>{#if admin}<a href="/voucher-batches"><span class="action-icon"><Icon name="batch"/></span><span><strong>Prepare voucher stock</strong><small>Generate and print a new batch</small></span><Icon name="arrow" size={17}/></a>{/if}<a href="/sales"><span class="action-icon"><Icon name="sales"/></span><span><strong>View sales</strong><small>Find a receipt or review a handover</small></span><Icon name="arrow" size={17}/></a></div></section>
  {#if data.integration}<section class="panel network-card"><div class="section-heading"><div><p class="eyebrow">YOUR NETWORK</p><h2>{data.networkProvider==='mikrotik'?'MikroTik + Omada Wi-Fi':'Omada Wi-Fi'}</h2></div><span class="action-icon"><Icon name="wifi"/></span></div><span class="mode-pill" class:test-mode={data.mode!=='live'}><span class="status-dot"></span>{networkLabel}</span><dl class="details"><dt>Router check</dt><dd>{data.integration.ok===true?'Reachable':data.integration.ok===false?'Needs attention':'Not checked'}</dd><dt>Last checked</dt><dd>{data.integration.last_check?date(data.integration.last_check):'—'}</dd>{#if data.networkProvider==='mikrotik'}<dt>Shared download</dt><dd>{data.wanDownload} Mbps</dd>{/if}</dl><a class="small-button" href="/settings">Network setup <Icon name="arrow" size={15}/></a><p class="small muted">Configuration and router checks do not verify voucher expiry.</p></section>{:else}<section class="panel accent"><p class="eyebrow">VOUCHER BASICS</p><h2>Ready when they are.</h2><p>Record the cash sale, then hand over the code. The customer’s time begins at their first connection.</p><a href="/vouchers" class="small-button">Open vouchers →</a></section>{/if}
 </div>
+{#if admin}
+<div class="chart-grid">
+ <section class="panel chart-card">
+  <header class="card-head"><div><h2>Net revenue</h2><p class="small muted">Last 30 days, after reversals</p></div><a class="small-button" href="/reports">Reports <Icon name="arrow" size={14}/></a></header>
+  <TrendChart points={data.trend} valueKey="net_tzs" label="Net revenue" format={(n)=>compact(n)}/>
+ </section>
+ <section class="panel chart-card">
+  <header class="card-head"><div><h2>Vouchers sold</h2><p class="small muted">Last 30 days</p></div><a class="small-button" href="/sales">Sales <Icon name="arrow" size={14}/></a></header>
+  <TrendChart points={data.trend} valueKey="vouchers_sold" label="Vouchers sold" format={(n)=>String(Math.round(n))} height={190}/>
+ </section>
+</div>
+<section class="panel chart-card">
+ <header class="card-head"><div><h2>Revenue by package</h2><p class="small muted">Last 30 days · ranked</p></div><a class="small-button" href="/packages">Packages <Icon name="arrow" size={14}/></a></header>
+ <RankChart rows={data.byPackage} format={(n)=>'TZS '+money(n)} sub={(r)=>r.vouchers+' voucher'+(r.vouchers===1?'':'s')+' sold'}/>
+</section>
+{/if}
 <div class="policy-strip"><Icon name="grants" size={18}/><strong>One voucher. One device.</strong><span>Time starts at first activation and continues while disconnected.</span></div>

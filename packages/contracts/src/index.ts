@@ -19,6 +19,11 @@ export const PurchaseInput=T.Object({package_id:Id,phone:T.Optional(T.String({ma
 export const ClaimInput=T.Object({claim_token:Text(200)},{additionalProperties:false});
 export const Paging=T.Object({page:T.Optional(T.Integer({minimum:1,maximum:100000})),q:T.Optional(T.String({maxLength:100})),state:T.Optional(T.String({maxLength:30})),package_id:T.Optional(Id),sort:T.Optional(T.Union([T.Literal('newest'),T.Literal('oldest')])),from:T.Optional(T.String({format:'date'})),to:T.Optional(T.String({format:'date'}))},{additionalProperties:false});
 export const Params=T.Object({id:Id},{additionalProperties:false});
+// Reporting time series. Row's field allowlist is for record shapes, so the
+// chart endpoints carry their own explicit schemas.
+export const TrendQuery=T.Object({days:T.Optional(T.Integer({minimum:7,maximum:180}))},{additionalProperties:false});
+export const Trend=T.Object({items:T.Array(T.Object({day:T.String(),gross_tzs:T.Number(),net_tzs:T.Number(),vouchers_sold:T.Integer()},{additionalProperties:false}))},{additionalProperties:false});
+export const PackageBreakdown=T.Object({items:T.Array(T.Object({package_name:T.String(),vouchers:T.Integer(),revenue_tzs:T.Number()},{additionalProperties:false}))},{additionalProperties:false});
 // Explicit selected columns are the response allowlist. Nested JSON is confined to sanitized evidence.
 const nullableString=T.Union([T.String(),T.Null()]);
 const fields:Record<string,any>={};

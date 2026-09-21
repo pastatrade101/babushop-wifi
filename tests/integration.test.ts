@@ -90,3 +90,28 @@ it('vouchers filter by package, and combine with status and search',async()=>{
  // A malformed id is rejected by the schema rather than reaching SQL.
  expect((await app.inject({url:'/api/v1/vouchers?package_id=not-a-uuid',headers:{authorization:'Bearer admin'}})).statusCode).toBe(400);
 });
+it('trend zero-fills quiet days and by-package ranks revenue',async()=>{
+ const t=await app.inject({url:'/api/v1/reports/trend?days=14',headers:{authorization:'Bearer admin'}});
+ expect(t.statusCode).toBe(200);
+ const points=JSON.parse(t.body).items;
+ expect(points).toHaveLength(14);                                  // every day present, not just days with sales
+ expect(points.every((p:any)=>typeof p.gross_tzs==='number'&&typeof p.vouchers_sold==='number')).toBe(true);
+ expect(points[0].day<points[13].day).toBe(true);                  // ascending, so the line reads left to right
+ await sold();
+ const after=JSON.parse((await app.inject({url:'/api/v1/reports/trend?days=14',headers:{authorization:'Bearer admin'}})).body).items;
+ expect(after[13].vouchers_sold).toBeGreaterThan(0);               // today's sale lands on the last bucket
+ expect(after[13].net_tzs).toBeGreaterThan(0);
+ const b=await app.inject({url:'/api/v1/reports/by-package',headers:{authorization:'Bearer admin'}});
+ const bars=JSON.parse(b.body).items;
+ expect(bars.length).toBeGreaterThan(0);
+ expect(bars.every((x:any)=>x.revenue_tzs>0)).toBe(true);
+ // Ranked descending -- except "Other", a rollup that sits last by convention
+ // however large it is, so it is excluded from the monotonic check.
+ const ranked=bars.filter((x:any)=>x.package_name!=='Other');
+ for(let i=1;i<ranked.length;i++)expect(ranked[i-1].revenue_tzs).toBeGreaterThanOrEqual(ranked[i].revenue_tzs);
+ if(bars.length>10)expect(bars[bars.length-1].package_name).toBe('Other');
+ // Cashiers must not read shop revenue.
+ expect((await app.inject({url:'/api/v1/reports/trend',headers:{authorization:'Bearer cashier'}})).statusCode).toBe(403);
+ // Out-of-range windows are rejected by the schema, not clamped silently.
+ expect((await app.inject({url:'/api/v1/reports/trend?days=999',headers:{authorization:'Bearer admin'}})).statusCode).toBe(400);
+});
