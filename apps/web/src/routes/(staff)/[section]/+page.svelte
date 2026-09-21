@@ -4,6 +4,7 @@ import {enhance} from '$app/forms';
 import {durationUnits,durationParts,formatDuration} from '$lib/duration';
 let {data,form}=$props();let edit=$state<any>(null);
 let checking=$state(false);
+let showImport=$state(false);let importing=$state(false);
 let copiedVoucher=$state<string|null>(null);let copyError=$state<string|null>(null);
 async function copyCode(id:string,code:string){
   copyError=null;
@@ -22,7 +23,24 @@ const columns=$derived(data.section==='packages'?['name','price_tzs','duration_m
 function printPage(){window.print();}
 </script>
 <svelte:head><title>{names[data.section]} · {data.brand}</title></svelte:head>
-<div class="page-heading no-print"><div><p class="eyebrow">{data.section==='sell'?'AT THE COUNTER':'SHOP WORKSPACE'}</p><h1>{names[data.section]}</h1><p>{descriptions[data.section]}</p></div>{#if data.section==='packages'&&admin}<button class="button" onclick={()=>edit={name:'',price_tzs:1000,duration_minutes:60,duration_amount:1,duration_unit:'hours',description:'',active:true}}>＋ New package</button>{/if}</div>
+<div class="page-heading no-print"><div><p class="eyebrow">{data.section==='sell'?'AT THE COUNTER':'SHOP WORKSPACE'}</p><h1>{names[data.section]}</h1><p>{descriptions[data.section]}</p></div>{#if data.section==='packages'&&admin}<div class="heading-actions"><button class="button secondary" onclick={()=>showImport=!showImport}>{showImport?'Close import':'⭱ Import CSV'}</button><button class="button" onclick={()=>edit={name:'',price_tzs:1000,duration_minutes:60,duration_amount:1,duration_unit:'hours',description:'',active:true}}>＋ New package</button></div>{/if}</div>
+{#if data.section==='packages'&&admin&&showImport}
+<section class="panel no-print import-panel">
+ <h2>Import packages from a file</h2>
+ <p class="small muted">A CSV with the columns <code>name, description, price_tzs, duration_minutes, download_mbps, upload_mbps, active</code>. Only name, price and duration are required.</p>
+ <p class="small muted"><strong>Duration is in minutes</strong> — 60 for an hour, 1440 a day, 10080 a week. Leave both speed columns blank for no limit, or fill both.</p>
+ <form method="POST" enctype="multipart/form-data" use:enhance={()=>{importing=true;return async({update})=>{await update({reset:false});importing=false;};}}>
+  <input type="hidden" name="op" value="import-packages">
+  <label for="package-file">CSV file</label>
+  <input id="package-file" name="file" type="file" accept=".csv,text/csv" required disabled={importing}>
+  <div class="heading-actions">
+   <a class="button secondary" href="/package-template" download>Download template</a>
+   <button class="button" disabled={importing}>{importing?'Importing…':'Import packages'}</button>
+  </div>
+ </form>
+ <p class="small muted">Nothing is imported unless every row is valid, so a rejected file leaves the catalogue untouched. Names already in the catalogue are refused rather than duplicated. Up to 200 packages per file.</p>
+</section>
+{/if}
 {#if form?.error}<div class="notice error no-print" role="alert">{form.error}</div>{/if}{#if form?.message}<div class="notice no-print" role="status">{form.message}</div>{/if}
 {#if form?.printed}<section class="print-preview panel"><div class="no-print print-toolbar"><h2>Ready to print</h2><button class="button" onclick={printPage}>Print / Save as PDF</button></div>{#if form.sale}<div class="receipt"><p class="eyebrow">{data.brand}</p><h2>Cash sale receipt</h2><p class="small">{form.sale.receipt_number}</p><p>{date(form.sale.created_at)} · Cashier: {form.sale.cashier_name}</p><strong class="receipt-total">{money(form.sale.total_tzs)}</strong><p>{form.sale.items.length} voucher(s) · Paid by cash</p><p class="small muted">Application receipt. Not a certified fiscal or tax receipt.</p></div>{/if}<div class="voucher-sheet">{#each form.printed.items as v}<article class="printed-voucher"><p class="eyebrow">{data.brand}</p><h3>{v.package_name}</h3><div class="voucher-code-row"><strong class="voucher-code">{v.code}</strong><button type="button" class="small-button no-print" aria-label={'Copy voucher code for '+v.package_name} onclick={()=>copyCode(v.id,v.code)}>{copiedVoucher===v.id?'Copied ✓':'Copy code'}</button></div><span class="sr-only no-print" role="status">{copiedVoucher===v.id?'Voucher code copied.':''}</span>{#if copyError===v.id}<p class="small no-print" role="alert">Copy is unavailable in this browser. Select the code above and copy it manually.</p>{/if}<p>{formatDuration(v.duration_minutes)} · {money(v.price_tzs)}</p>{#if v.download_mbps}<p class="small">Speed limit: {v.download_mbps} Mbps down / {v.upload_mbps} Mbps up{data.mode==='live'?'':' · simulation'}</p>{/if}<p>Join the shop Wi-Fi and enter this code.</p><small>Validity starts at first activation. One device only. Time continues while disconnected.</small>{#if v.inventory_state==='AVAILABLE'}<span class="badge">Stock — must be sold before use</span>{/if}{#if v.inventory_state==='VOID'}<span class="badge">VOID — cannot be used</span>{/if}</article>{/each}</div></section>{/if}
 {#if data.section==='sell'}

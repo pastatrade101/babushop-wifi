@@ -1,4 +1,5 @@
 import {toMinutes} from '$lib/duration';
+import {packagesFromCsv} from '$lib/csv';
 import {fail,error} from '@sveltejs/kit';
 import {randomUUID} from 'node:crypto';
 import {api} from '$lib/server/api';
@@ -11,6 +12,17 @@ export const load=async(event:any)=>{const parent=await event.parent(),section=e
  return {section,...result,query:Object.fromEntries(query)};
 };
 export const actions={default:async(event:any)=>{const f=await event.request.formData(),get=(n:string)=>String(f.get(n)||''),op=get('op'),id=get('id');try{
+ if(op==='import-packages'){
+  const upload=f.get('file');
+  if(!(upload instanceof File)||upload.size===0)return fail(400,{error:'Choose a CSV file to upload.'});
+  if(upload.size>262144)return fail(400,{error:'That file is larger than 256 KB. Split it into smaller uploads.'});
+  let items;
+  try{items=packagesFromCsv(await upload.text());}
+  catch(e){return fail(400,{error:(e as Error).message});}
+  if(!items.length)return fail(400,{error:'That file has a header row but no packages.'});
+  const result=await api(event,'/packages/bulk',{items});
+  return {message:`Imported ${result.created} package${result.created===1?'':'s'}. Existing voucher terms stay unchanged.`};
+ }
  if(op==='package'){const body={name:get('name'),description:get('description'),price_tzs:Number(get('price_tzs')),duration_minutes:toMinutes(Number(get('duration_amount')),get('duration_unit')),download_mbps:get('download_mbps')?Number(get('download_mbps')):null,upload_mbps:get('upload_mbps')?Number(get('upload_mbps')):null,active:get('active')==='on'};await api(event,'/packages'+(id?'/'+id:''),body,id?'PATCH':'POST');return {message:'Package saved. Existing voucher terms stay unchanged.'};}
  if(op==='batch'){const b=await api(event,'/voucher-batches',{package_id:get('package_id'),quantity:Number(get('quantity')),label:get('label')});return {message:'Voucher batch created.',batch:b};}
  if(op==='reserve'){const reservation=await api(event,'/sales/reserve',{package_id:get('package_id'),quantity:Number(get('quantity'))});return {reservation,idempotency_key:randomUUID()};}

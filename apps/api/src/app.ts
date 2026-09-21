@@ -9,6 +9,7 @@ import {pool,tx,audit,Problem,requireValue,SITE,type Staff} from '../../../packa
 import * as sales from '../../../packages/database/src/sales.ts';
 import * as access from '../../../packages/database/src/access.ts';
 import * as purchases from '../../../packages/database/src/purchases.ts';
+import * as catalogue from '../../../packages/database/src/catalogue.ts';
 import {paymentsEnabled} from '../../../packages/payments/src/index.ts';
 import {digest,csvCell} from '../../../packages/database/src/crypto.ts';
 import {type Adapter,adapterFromEnv} from '../../../packages/omada/src/index.ts';
@@ -44,6 +45,7 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
  route('GET','/packages',undefined,S.List,async(r:any)=>{const q=r.query;return paged(`select p.*, (select count(*)::int from wifi.vouchers v where v.package_id=p.id and inventory_state='AVAILABLE' and (reserved_until is null or reserved_until<now())) available from wifi.packages p where site_id=$1 and name ilike $2 ${r.staff.role==='CASHIER'?'and active':''}`,[SITE,'%'+(q.q||'')+'%'],q);},false,{schema:{querystring:S.Paging}});
  route('POST','/packages',S.PackageInput,S.Row,async(r:any)=>tx(async db=>{const b=r.body;let speeds;try{speeds=validateSpeeds(b);}catch(e){throw new Problem(400,(e as Error).message);}const p=(await db.query('insert into wifi.packages(site_id,name,description,price_tzs,duration_minutes,active,download_mbps,upload_mbps) values($1,$2,$3,$4,$5,$6,$7,$8) returning *',[SITE,b.name,b.description||'',b.price_tzs,b.duration_minutes,b.active??true,speeds.download_mbps,speeds.upload_mbps])).rows[0];await audit(db,r.staff.id,'PACKAGE_CREATED',p.id);return p;}),true);
  route('PATCH','/packages/:id',S.PackageInput,S.Row,async(r:any)=>tx(async db=>{const b=r.body;let speeds;try{speeds=validateSpeeds(b);}catch(e){throw new Problem(400,(e as Error).message);}const p=(await db.query('update wifi.packages set name=$2,description=$3,price_tzs=$4,duration_minutes=$5,active=$6,download_mbps=$8,upload_mbps=$9,updated_at=now() where id=$1 and site_id=$7 returning *',[r.params.id,b.name,b.description||'',b.price_tzs,b.duration_minutes,b.active??true,SITE,speeds.download_mbps,speeds.upload_mbps])).rows[0];requireValue(p,404,'Package not found');await audit(db,r.staff.id,'PACKAGE_UPDATED',p.id);return p;}),true,{schema:{params:S.Params}});
+ route('POST','/packages/bulk',S.BulkPackageInput,T.Object({created:T.Integer(),items:T.Array(S.Row)},{additionalProperties:false}),async(r:any)=>catalogue.bulkCreate(r.staff,r.body.items),true,{config:{rateLimit:{max:10,timeWindow:'1 minute'}}});
  route('POST','/voucher-batches',S.BatchInput,S.Row,async(r:any)=>sales.generateBatch(r.staff,r.body),true);
  route('GET','/voucher-batches',undefined,S.List,async(r:any)=>paged('select * from wifi.voucher_batches where label ilike $1',['%'+(r.query.q||'')+'%'],r.query),true,{schema:{querystring:S.Paging}});
  route('GET','/voucher-batches/:id',undefined,S.Row,async(r:any)=>{const b=(await pool.query('select * from wifi.voucher_batches where id=$1',[r.params.id])).rows[0];requireValue(b,404,'Batch not found');return b;},true,{schema:{params:S.Params}});

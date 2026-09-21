@@ -4,6 +4,10 @@ export const Text=(max=100)=>T.String({minLength:1,maxLength:max});
 export const Reason=T.Object({reason:T.String({minLength:3,maxLength:500})},{additionalProperties:false});
 export const PackageInput=T.Object({name:Text(),description:T.Optional(T.String({maxLength:1000})),price_tzs:T.Integer({minimum:1,maximum:10000000}),duration_minutes:T.Integer({minimum:1,maximum:525600}),download_mbps:T.Optional(T.Union([T.Integer({minimum:1,maximum:10000}),T.Null()])),upload_mbps:T.Optional(T.Union([T.Integer({minimum:1,maximum:10000}),T.Null()])),active:T.Optional(T.Boolean())},{additionalProperties:false});
 export const BatchInput=T.Object({package_id:Id,quantity:T.Integer({minimum:1,maximum:1000}),label:T.Optional(T.String({maxLength:100}))},{additionalProperties:false});
+// Bulk catalogue import. Capped so one upload cannot hold a transaction open
+// over thousands of inserts; the service reports per-row problems and imports
+// all-or-nothing.
+export const BulkPackageInput=T.Object({items:T.Array(PackageInput,{minItems:1,maxItems:200})},{additionalProperties:false});
 export const ReservationInput=T.Object({package_id:Id,quantity:T.Integer({minimum:1,maximum:100})},{additionalProperties:false});
 export const SaleInput=T.Object({reservation_id:Id,cash_received:T.Boolean(),customer_name:T.Optional(T.String({maxLength:100})),customer_phone:T.Optional(T.String({maxLength:30})),notes:T.Optional(T.String({maxLength:500}))},{additionalProperties:false});
 export const ContextInput=T.Object({clientMac:Text(32),apMac:Text(32),ssidName:Text(64),radioId:Text(2),site:Text(100),clientIp:T.Optional(Text(64))},{additionalProperties:false});
