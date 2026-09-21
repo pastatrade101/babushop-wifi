@@ -17,7 +17,7 @@ export const PurchaseInput=T.Object({package_id:Id,phone:T.Optional(T.String({ma
 // The claim token is the buyer's only handle on their purchase. It is POSTed,
 // never placed in a URL, so it cannot leak through history, logs or a referrer.
 export const ClaimInput=T.Object({claim_token:Text(200)},{additionalProperties:false});
-export const Paging=T.Object({page:T.Optional(T.Integer({minimum:1,maximum:100000})),q:T.Optional(T.String({maxLength:100})),state:T.Optional(T.String({maxLength:30})),sort:T.Optional(T.Union([T.Literal('newest'),T.Literal('oldest')])),from:T.Optional(T.String({format:'date'})),to:T.Optional(T.String({format:'date'}))},{additionalProperties:false});
+export const Paging=T.Object({page:T.Optional(T.Integer({minimum:1,maximum:100000})),q:T.Optional(T.String({maxLength:100})),state:T.Optional(T.String({maxLength:30})),package_id:T.Optional(Id),sort:T.Optional(T.Union([T.Literal('newest'),T.Literal('oldest')])),from:T.Optional(T.String({format:'date'})),to:T.Optional(T.String({format:'date'}))},{additionalProperties:false});
 export const Params=T.Object({id:Id},{additionalProperties:false});
 // Explicit selected columns are the response allowlist. Nested JSON is confined to sanitized evidence.
 const nullableString=T.Union([T.String(),T.Null()]);

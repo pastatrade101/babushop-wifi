@@ -71,3 +71,22 @@ it('runtime mode follows the API adapter for both staff roles and stays private'
  const liveApp=await buildApp({adapter:new MikroTikRadiusAdapter(),verifyToken:async()=>cashier.id});
  try{const r=await liveApp.inject({url:'/api/v1/runtime',headers:{authorization:'Bearer cashier'}});expect(r.json()).toEqual({mode:'live',provider:'mikrotik',radius_enabled:true});}finally{await liveApp.close();}
 }));
+it('vouchers filter by package, and combine with status and search',async()=>{
+ const a=await stock(2),b=await stock(3);
+ const all=await app.inject({url:'/api/v1/vouchers',headers:{authorization:'Bearer admin'}});
+ const mine=(r:any)=>JSON.parse(r.body).items.filter((v:any)=>[a.p.id,b.p.id].includes(v.package_id));
+ expect(mine(all).length).toBe(5);
+ const onlyA=await app.inject({url:'/api/v1/vouchers?package_id='+a.p.id,headers:{authorization:'Bearer admin'}});
+ expect(onlyA.statusCode).toBe(200);
+ const rowsA=JSON.parse(onlyA.body).items;
+ expect(rowsA).toHaveLength(2);
+ expect(rowsA.every((v:any)=>v.package_id===a.p.id)).toBe(true);
+ // An unknown but well-formed id must return nothing, not everything.
+ const none=await app.inject({url:'/api/v1/vouchers?package_id='+randomUUID(),headers:{authorization:'Bearer admin'}});
+ expect(JSON.parse(none.body).items).toHaveLength(0);
+ // Combining filters must narrow, not widen.
+ const sold=await app.inject({url:'/api/v1/vouchers?package_id='+b.p.id+'&state=AVAILABLE',headers:{authorization:'Bearer admin'}});
+ expect(JSON.parse(sold.body).items).toHaveLength(3);
+ // A malformed id is rejected by the schema rather than reaching SQL.
+ expect((await app.inject({url:'/api/v1/vouchers?package_id=not-a-uuid',headers:{authorization:'Bearer admin'}})).statusCode).toBe(400);
+});
