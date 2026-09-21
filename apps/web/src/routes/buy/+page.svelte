@@ -3,7 +3,10 @@ import SellerContact from '$lib/components/SellerContact.svelte';
 import {enhance} from '$app/forms';
 let {data,form}=$props();let busy=$state(false);let chosen=$state('');
 const money=(n:number)=>new Intl.NumberFormat('en-TZ').format(n)+' TZS';
-const duration=(m:number)=>m<60?m+' minutes':m%60===0?(m/60)+' hour'+(m===60?'':'s'):Math.floor(m/60)+'h '+(m%60)+'m';
+// The staff UI's formatter, not a second one: a package has to read the same
+// to the customer buying it as to the cashier selling it. It also says
+// "1 week" where a local hours-only version said "168 hours".
+import {formatDuration} from '$lib/duration';
 // Hand the claim token to the browser only, then leave for the hosted checkout.
 // sessionStorage keeps it out of the URL, out of history and out of any referrer.
 $effect(()=>{
@@ -32,7 +35,9 @@ $effect(()=>{
      <input type="radio" name="package_id" value={item.id} bind:group={chosen} required>
      <span class="package-detail">
       <strong>{item.name}</strong>
-      <span class="small muted">{duration(item.duration_minutes)}{#if item.download_mbps} · up to {item.download_mbps} Mbps{/if}</span>
+      <!-- The separator is an explicit expression: Svelte trims leading
+           whitespace inside an {#if}, which glued it to the duration. -->
+      <span class="small muted">{formatDuration(item.duration_minutes)}{#if item.download_mbps}{' · up to '+item.download_mbps+' Mbps'}{/if}</span>
       {#if item.description}<span class="small muted">{item.description}</span>{/if}
      </span>
      <span class="package-price">{money(item.price_tzs)}</span>
@@ -51,9 +56,12 @@ $effect(()=>{
 {#if data.support}<p class="small">Need help? {data.support}</p>{/if}
 </div></section><p class="portal-footer">Simple access. Your time, your connection.</p></main>
 <style>
-.package-option{display:flex;align-items:center;gap:12px;padding:12px 14px;margin:8px 0;border:1px solid #dce7d2;border-radius:10px;cursor:pointer}
+/* The global `label` rule is column-flex and the global `input` rule is
+   full-width with a 42px min-height, so a bare radio renders as a huge circle
+   stacked above its text. Both have to be overridden here. */
+.package-option{display:flex;flex-direction:row;align-items:center;gap:12px;padding:12px 14px;margin:8px 0;border:1px solid #dce7d2;border-radius:10px;cursor:pointer;font-weight:400}
 .package-option:has(input:checked){border-color:#255337;background:#f4f8ed}
-.package-option input{margin:0;flex:none}
+.package-option input[type=radio]{margin:0;flex:none;width:20px;height:20px;min-height:0;padding:0;accent-color:#1e614b}
 .package-detail{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
 .package-price{font-weight:700;white-space:nowrap}
 fieldset{border:0;padding:0;margin:0}
