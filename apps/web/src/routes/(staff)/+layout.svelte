@@ -2,10 +2,10 @@
 import {page} from '$app/state';
 import Icon from '$lib/components/Icon.svelte';
 let {data,children}=$props();let menuOpen=$state(false);
-const links=[['/','Overview','overview'],['/sell','Sell internet','plus'],['/vouchers','Vouchers','ticket'],['/voucher-batches','Voucher batches','batch'],['/packages','Packages','package'],['/sales','Sales','sales'],['/access-grants','Access grants','grants'],['/sessions','Wi-Fi sessions','wifi'],['/reports','Reports','reports'],['/staff','Staff','staff'],['/network','Network','network'],['/settings','Network setup','settings']];
+const links=[['/','Overview','overview'],['/sell','Sell internet','plus'],['/vouchers','Vouchers','ticket'],['/voucher-batches','Voucher batches','batch'],['/packages','Packages','package'],['/sales','Sales','sales'],['/payments','Mobile payments','plus'],['/access-grants','Access grants','grants'],['/sessions','Wi-Fi sessions','wifi'],['/reports','Reports','reports'],['/staff','Staff','staff'],['/network','Network','network'],['/settings','Network setup','settings']];
 // A detail page such as /network/<id> should keep its section lit in the sidebar.
 const isCurrent=(url:string)=>page.url.pathname===url||(url!=='/'&&page.url.pathname.startsWith(url+'/'));
-const cashier=['/','/sell','/vouchers','/packages','/sales'];
+const cashier=['/','/sell','/vouchers','/packages','/sales','/payments'];
 const current=$derived(links.find(([url])=>url===page.url.pathname)?.[1]||'Workspace');
 </script>
 <a class="skip-link" href="#main-content">Skip to content</a>

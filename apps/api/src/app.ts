@@ -58,7 +58,9 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
  route('POST','/voucher-batches/:id/export',T.Object({},{additionalProperties:false}),T.String(),async(r:any,reply:any)=>{const rows=await sales.reveal(r.staff,{batch_id:r.params.id},'BATCH_EXPORTED');reply.type('text/csv').header('Content-Disposition','attachment; filename="vouchers.csv"');return ['code,package,price_tzs,duration_minutes',...rows.map(v=>[v.code,v.package_name,v.price_tzs,v.duration_minutes].map(csvCell).join(','))].join('\r\n');},true,{schema:{params:S.Params},config:{rateLimit:{max:10,timeWindow:'1 minute'}}});
  route('POST','/sales/reserve',S.ReservationInput,T.Object({...S.Row.properties,items:T.Array(S.Row)},{additionalProperties:false}),async(r:any)=>sales.reserve(r.staff,r.body));
  route('POST','/sales',S.SaleInput,S.Row,async(r:any)=>sales.sell(r.staff,r.body,r.headers['idempotency-key']),false,{schema:{headers:T.Object({'idempotency-key':S.Id})}});
- route('GET','/sales',undefined,S.List,async(r:any)=>paged('select s.* from wifi.manual_sales s where ($1::boolean or cashier_id=$2) and (receipt_number ilike $3 or customer_phone ilike $3)',[r.staff.role==='ADMIN',r.staff.id,'%'+(r.query.q||'')+'%'],r.query),false,{schema:{querystring:S.Paging}});
+ route('GET','/sales',undefined,S.List,async(r:any)=>paged(`select s.*, i.provider, i.network, i.reference payment_reference from wifi.manual_sales s
+   left join wifi.payment_intents i on i.sale_id=s.id
+   where ($1::boolean or cashier_id=$2) and (receipt_number ilike $3 or customer_phone ilike $3 or i.reference ilike $3)`,[r.staff.role==='ADMIN',r.staff.id,'%'+(r.query.q||'')+'%'],r.query),false,{schema:{querystring:S.Paging}});
  route('GET','/sales/:id',undefined,T.Object({...S.Row.properties,items:T.Array(S.Row)},{additionalProperties:false}),async(r:any)=>sales.saleDetail(r.staff,r.params.id),false,{schema:{params:S.Params}});
  route('POST','/sales/:id/print',T.Object({},{additionalProperties:false}),S.SecretRows,async(r:any)=>({items:await sales.reveal(r.staff,{sale_id:r.params.id},'SALE_PRINTED')}),false,{schema:{params:S.Params},config:{rateLimit:{max:30,timeWindow:'1 minute'}}});
  route('POST','/sales/:id/reverse',S.Reason,S.Row,async(r:any)=>sales.reverse(r.staff,r.params.id,r.body.reason),true,{schema:{params:S.Params}});
@@ -123,6 +125,9 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
   const provider=paymentProvider();
   return {enabled:!!provider,flow:provider?.flow||'redirect',networks:provider?.networks||[],...(provider?await purchases.catalogue():{items:[]})};
  },false,{config:{rateLimit:{max:120,timeWindow:'1 minute'}}});
+ // Every payment attempt, settled or not. A customer who says "I paid and got
+ // nothing" is looking for a row that never became a sale.
+ route('GET','/payments',undefined,S.List,async(r:any)=>purchases.attempts(r.query),false,{schema:{querystring:S.Paging}});
  route('POST','/portal/purchase',S.PurchaseInput,T.Object({reference:T.String(),claim_token:T.String(),checkout_url:T.Union([T.String(),T.Null()]),flow:T.String(),instruction:T.Union([T.String(),T.Null()]),amount_tzs:T.Integer(),expires_at:T.String()},{additionalProperties:false}),async(r:any)=>purchases.start(r.body),false,{config:{rateLimit:{max:10,timeWindow:'1 minute'}}});
  route('POST','/portal/purchase/status',S.ClaimInput,T.Object({status:T.String(),code:T.Union([T.String(),T.Null()]),package_name:T.Union([T.String(),T.Null()]),duration_minutes:T.Optional(T.Integer()),message:T.Union([T.String(),T.Null()])},{additionalProperties:false}),async(r:any)=>purchases.status(r.body.claim_token),false,{config:{rateLimit:{hook:'preHandler',max:120,timeWindow:'1 minute',keyGenerator:(r:any)=>digest(r.body?.claim_token||r.ip,'PORTAL_CONTEXT_SECRET')}}});
  // Our own callback endpoint, on our own domain. Authenticated by the provider's

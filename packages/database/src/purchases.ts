@@ -45,9 +45,9 @@ export async function start(input:{package_id:string;phone?:string;network?:stri
   const reservation=(await db.query(`insert into wifi.sale_reservations(staff_id,channel,expires_at)
    values(null,'SELF_SERVICE',now()+($1||' minutes')::interval) returning *`,[String(HOLD_MINUTES)])).rows[0];
   await db.query('update wifi.vouchers set reservation_id=$1,reserved_until=$2 where id=$3',[reservation.id,reservation.expires_at,voucher.id]);
-  return (await db.query(`insert into wifi.payment_intents(site_id,package_id,reservation_id,provider,reference,amount_tzs,customer_phone,claim_digest,expires_at)
-   values($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *`,
-   [SITE,voucher.package_id,reservation.id,provider!.name,reference,voucher.price_tzs,input.phone||null,digest(claim,'PORTAL_CONTEXT_SECRET'),reservation.expires_at])).rows[0];
+  return (await db.query(`insert into wifi.payment_intents(site_id,package_id,reservation_id,provider,network,reference,amount_tzs,customer_phone,claim_digest,expires_at)
+   values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *`,
+   [SITE,voucher.package_id,reservation.id,provider!.name,input.network||null,reference,voucher.price_tzs,input.phone||null,digest(claim,'PORTAL_CONTEXT_SECRET'),reservation.expires_at])).rows[0];
  });
  let checkout;
  try{
@@ -187,4 +187,25 @@ export async function expireStale(){
  const stale=(await pool.query("select id from wifi.payment_intents where status='PENDING' and expires_at<now() limit 50")).rows;
  for(const row of stale)await release(row.id,'Checkout expired').catch(()=>{});
  return stale.length;
+}
+
+/**
+ * Every payment attempt, whatever became of it.
+ *
+ * A failed attempt is the one a customer actually comes to the counter about --
+ * "I paid and got nothing" -- so it has to be findable by phone number or
+ * reference, not just visible as an absence in the sales list.
+ */
+export async function attempts(query:{page?:number;q?:string;state?:string}){
+ const page=query.page||1;
+ const rows=(await pool.query(`select i.id,i.reference,i.provider,i.network,i.status,i.amount_tzs,i.customer_phone,
+   i.failure_reason,i.provider_reference,i.created_at,i.paid_at,s.receipt_number,p.name package_name
+  from wifi.payment_intents i
+  left join wifi.manual_sales s on s.id=i.sale_id
+  left join wifi.packages p on p.id=i.package_id
+  where ($1='' or i.reference ilike $1 or i.customer_phone ilike $1 or i.provider_reference ilike $1)
+    and ($2='' or i.status=$2)
+  order by i.created_at desc limit 26 offset $3`,
+  [query.q?'%'+query.q+'%':'',query.state||'',(page-1)*25])).rows;
+ return {items:rows.slice(0,25),page,has_more:rows.length>25};
 }
