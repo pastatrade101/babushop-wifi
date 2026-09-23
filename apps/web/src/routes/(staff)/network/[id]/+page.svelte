@@ -314,42 +314,43 @@ async function copyUrl(value:string){try{await navigator.clipboard.writeText(val
 </section>
 
 <style>
- .small{font-size:.78rem;color:#7b8b7e}
+ .small{font-size:.8125rem;color:var(--muted)}
  .footnote{margin-top:12px}
- .eyebrow a{color:#5c7a64}
+ .eyebrow a{color:var(--primary-text)}
  .details.compact dt,.details.compact dd{padding:7px 0}
- .device-hero{display:flex;align-items:center;gap:14px;background:#f7faf5;border:1px solid #e6ecdf;border-radius:12px;padding:18px;margin-bottom:18px}
+ .device-hero{display:flex;align-items:center;gap:14px;background:var(--surface-muted);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:18px}
  .device-hero>div:nth-child(2){flex:1;min-width:0}
  .device-hero strong{font-size:1.02rem}
- .device-hero .ip{font-size:1.5rem;font-weight:650;letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:#1f5340}
+ .device-hero .ip{font-size:1.5rem;font-weight:650;letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:var(--ink)}
  .verdict{border-radius:11px;padding:16px 18px;margin-bottom:16px;border:1px solid}
- .verdict.good{background:#f1f8f2;border-color:#d7e8da}
- .verdict.warn{background:#fff8e9;border-color:#ecdcb4}
- .verdict.bad{background:#fdf1ed;border-color:#f0d8cd}
+ .verdict.good{background:var(--success-soft);border-color:var(--line)}
+ .verdict.warn{background:var(--warning-soft);border-color:var(--line)}
+ .verdict.bad{background:var(--danger-soft);border-color:var(--line)}
  .verdict p{font-size:.8rem;margin:5px 0 0}
- .reasons{margin:10px 0 0;padding-left:18px;font-size:.78rem;color:#5f7064}
+ .reasons{margin:10px 0 0;padding-left:18px;font-size:.8125rem;color:var(--muted)}
  .reasons li{margin-bottom:5px}
  .approve{margin:0;font-weight:500;font-size:.75rem}
  .plan{margin-top:18px}
  .plan h3{font-size:.95rem;margin:22px 0 10px}
  .plan h4{font-size:.82rem;margin:16px 0 6px}
  .guarantee{display:flex;align-items:start;gap:9px;font-size:.79rem;margin:7px 0}
- .guarantee.good{color:#3d7350}
- .guarantee.bad{color:#9d4c34}
+ .guarantee.good{color:var(--success)}
+ .guarantee.bad{color:var(--danger)}
  .action{border:1px solid var(--line);border-radius:10px;padding:15px;margin-bottom:12px}
- .action.modify{border-color:#ecdbac;background:#fffdf6}
+ .action.modify{border-color:var(--line);background:var(--warning-soft)}
  .action header{display:flex;align-items:center;gap:10px;margin-bottom:7px;flex-wrap:wrap}
  .action header strong{font-size:.86rem}
  .rest{font-family:ui-monospace,monospace;overflow-wrap:anywhere}
- .step-label{font-size:.63rem;letter-spacing:.09em;font-weight:700;color:#7a8b7e;margin:12px 0 5px}
- .marker code{background:#f2f6f1;padding:2px 5px;border-radius:4px}
- .cmd{font-size:.68rem;color:#6f7f72}
+ .step-label{font-size:.63rem;letter-spacing:.09em;font-weight:700;color:var(--muted);margin:12px 0 5px}
+ .marker code{background:var(--surface-muted);padding:2px 5px;border-radius:4px}
+ .cmd{font-size:.68rem;color:var(--muted)}
  .pf{display:inline-block;border-radius:5px;padding:3px 7px;font-size:.62rem;font-weight:700;letter-spacing:.05em}
- .pf.pass{background:#eef6ef;color:#3d7350}
- .pf.action_required{background:#fff6df;color:#8a692b}
- .pf.unverified{background:#fdf0ec;color:#9d4c34}
- pre{background:#f5f8f4;border:1px solid #e4ebe3;border-radius:8px;padding:12px;overflow-x:auto;font-size:.73rem;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+ .pf.pass{background:var(--success-soft);color:var(--success)}
+ .pf.action_required{background:var(--warning-soft);color:var(--warning)}
+ .pf.unverified{background:var(--danger-soft);color:var(--danger)}
+ pre{background:var(--surface-muted);border:1px solid var(--line);border-radius:8px;padding:12px;overflow-x:auto;font-size:.73rem;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
  code{font-size:.73rem;overflow-wrap:anywhere}
  .adoption p{font-size:.8rem;margin:6px 0 0}
- td.detail{font-size:.7rem;color:#6f7f72;overflow-wrap:anywhere;max-width:380px}
+ td.detail{font-size:.7rem;color:var(--muted);overflow-wrap:anywhere;max-width:380px}
+@media(max-width:560px){.device-hero{flex-wrap:wrap}.device-hero .ip{width:100%;font-size:1.25rem}.card-head{flex-wrap:wrap}.small{overflow-wrap:anywhere}}
 </style>

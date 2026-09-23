@@ -1,4 +1,5 @@
 <script lang="ts">
+import Icon from '$lib/components/Icon.svelte';
 import SellerContact from '$lib/components/SellerContact.svelte';
 import {enhance} from '$app/forms';
 let {data,form}=$props();let busy=$state(false);let chosen=$state('');
@@ -26,7 +27,7 @@ $effect(()=>{
 });
 </script>
 <svelte:head><title>Buy Wi-Fi · {data.brand}</title><meta name="robots" content="noindex"></svelte:head>
-<main class="portal-wrap"><div class="portal-brand">◉ {data.brand}</div><section class="portal-card"><div class="portal-body">
+<main class="portal-wrap"><div class="portal-brand brand"><span class="brand-mark"><Icon/></span>{data.brand}</div><section class="portal-card"><div class="portal-body">
 <p class="eyebrow">BUY WI-FI</p><h1>Pay with your phone.</h1>
 
 {#if !data.enabled}
@@ -82,9 +83,9 @@ $effect(()=>{
 /* The global `label` rule is column-flex and the global `input` rule is
    full-width with a 42px min-height, so a bare radio renders as a huge circle
    stacked above its text. Both have to be overridden here. */
-.package-option{display:flex;flex-direction:row;align-items:center;gap:12px;padding:12px 14px;margin:8px 0;border:1px solid #dce7d2;border-radius:10px;cursor:pointer;font-weight:400}
-.package-option:has(input:checked){border-color:#255337;background:#f4f8ed}
-.package-option input[type=radio]{margin:0;flex:none;width:20px;height:20px;min-height:0;padding:0;accent-color:#1e614b}
+.package-option{display:flex;flex-direction:row;align-items:center;gap:12px;padding:12px 14px;margin:8px 0;border:1px solid var(--line);border-radius:10px;cursor:pointer;font-weight:400}
+.package-option:has(input:checked){border-color:var(--primary-text);background:var(--primary-soft)}
+.package-option input[type=radio]{margin:0;flex:none;width:20px;height:20px;min-height:0;padding:0;accent-color:var(--primary)}
 .package-detail{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
 .package-price{font-weight:700;white-space:nowrap}
 fieldset{border:0;padding:0;margin:0}

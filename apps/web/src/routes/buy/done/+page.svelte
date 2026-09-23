@@ -1,4 +1,5 @@
 <script lang="ts">
+import Icon from '$lib/components/Icon.svelte';
 import SellerContact from '$lib/components/SellerContact.svelte';
 import {onMount} from 'svelte';
 let {data}=$props();
@@ -32,10 +33,10 @@ async function copy(){try{await navigator.clipboard.writeText(code);copied=true;
 onMount(()=>{check();return()=>clearTimeout(timer);});
 </script>
 <svelte:head><title>Your voucher · {data.brand}</title><meta name="robots" content="noindex"></svelte:head>
-<main class="portal-wrap"><div class="portal-brand">◉ {data.brand}</div><section class="portal-card"><div class="portal-body" aria-live="polite">
+<main class="portal-wrap"><div class="portal-brand brand"><span class="brand-mark"><Icon/></span>{data.brand}</div><section class="portal-card"><div class="portal-body" aria-live="polite">
 
 {#if phase==='loading'||phase==='pending'}
- <div class="wifi-symbol" aria-hidden="true">⌁</div>
+ <div class="wifi-symbol" aria-hidden="true"><Icon size={26}/></div>
  <p class="eyebrow">PAYMENT</p><h1>Confirming your payment…</h1>
  <p>Keep this page open. If your provider asked for a PIN, approve it on your phone.</p>
  <p class="small muted">This usually takes a few seconds.</p>
@@ -77,5 +78,5 @@ onMount(()=>{check();return()=>clearTimeout(timer);});
 </div></section><p class="portal-footer">Simple access. Your time, your connection.</p></main>
 <style>
 .voucher-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:clamp(20px,7vw,30px);font-weight:700;letter-spacing:.06em;
- padding:14px;margin:14px 0;border:1px dashed #255337;border-radius:10px;background:#f4f8ed;color:#255337;text-align:center;user-select:all;word-break:break-all}
+ padding:14px;margin:14px 0;border:1px dashed var(--primary-text);border-radius:10px;background:var(--primary-soft);color:var(--primary-text);text-align:center;user-select:all;word-break:break-all}
 </style>

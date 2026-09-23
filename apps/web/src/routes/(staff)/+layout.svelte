@@ -1,12 +1,13 @@
 <script lang="ts">
 import {page} from '$app/state';
 import Icon from '$lib/components/Icon.svelte';
+import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 let {data,children}=$props();let menuOpen=$state(false);
 const links=[['/','Overview','overview'],['/sell','Sell internet','plus'],['/vouchers','Vouchers','ticket'],['/voucher-batches','Voucher batches','batch'],['/packages','Packages','package'],['/sales','Sales','sales'],['/payments','Mobile payments','plus'],['/access-grants','Access grants','grants'],['/sessions','Wi-Fi sessions','wifi'],['/reports','Reports','reports'],['/staff','Staff','staff'],['/network','Network','network'],['/settings','Network setup','settings']];
 // A detail page such as /network/<id> should keep its section lit in the sidebar.
 const isCurrent=(url:string)=>page.url.pathname===url||(url!=='/'&&page.url.pathname.startsWith(url+'/'));
 const cashier=['/','/sell','/vouchers','/packages','/sales','/payments'];
-const current=$derived(links.find(([url])=>url===page.url.pathname)?.[1]||'Workspace');
+const current=$derived(links.find(([url])=>isCurrent(url))?.[1]||'Workspace');
 </script>
 <a class="skip-link" href="#main-content">Skip to content</a>
 <div class="workspace">
@@ -18,9 +19,9 @@ const current=$derived(links.find(([url])=>url===page.url.pathname)?.[1]||'Works
   </div>
  </aside>
  <div class="workspace-main">
-  <header class="topbar"><div class="breadcrumb">Workspace <span>/</span> <strong>{current}</strong></div><div class="topbar-meta"><span class="mode-pill" class:test-mode={data.mode!=='live'}><span class="status-dot"></span>{data.mode==='live'?'Live mode':'Test mode'}</span><span class="currency">TZS · Tanzania</span></div></header>
+  <header class="topbar"><form class="workspace-search" method="GET" action="/vouchers" role="search"><Icon name="search" size={20}/><input name="q" aria-label="Search vouchers" placeholder="Search vouchers…"><button type="submit" class="icon-button" aria-label="Search"><Icon name="arrow" size={17}/></button></form><div class="topbar-meta"><ThemeToggle/><span class="mode-pill" class:test-mode={data.mode!=='live'}><span class="status-dot"></span>{data.mode==='live'?'Live mode':'Test mode'}</span><span class="topbar-avatar" aria-label={data.staff.display_name}>{data.staff.display_name.slice(0,1).toUpperCase()}</span></div></header>
   {#if data.mode!=='live'}<div class="simulation" role="status"><strong>Portal test mode</strong><span>Sales are real records. {data.networkProvider==='mikrotik'?'The separate RADIUS service may already allow Wi-Fi access. Switch the API and web deployment to live after voucher checks pass.':'Portal internet authorization is simulated.'}</span>{#if data.staff.role==='ADMIN'}<a href="/settings">View setup →</a>{/if}</div>{/if}
-  <main id="main-content" class="content" tabindex="-1">{@render children()}</main>
+  <main id="main-content" class="content" tabindex="-1"><div class="breadcrumb no-print"><a href="/">Workspace</a><span>/</span><strong>{current}</strong></div>{@render children()}</main>
   <footer class="workspace-footer">{data.brand}<span>Prepaid internet, made simple.</span></footer>
  </div>
 </div>

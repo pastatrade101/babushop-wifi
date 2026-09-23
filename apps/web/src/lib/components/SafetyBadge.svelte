@@ -11,7 +11,7 @@ const copy:Record<string,string>={read:'READ ONLY',controlled:'CONTROLLED CHANGE
 
 <style>
  .safety{display:inline-block;border-radius:6px;padding:4px 9px;font-size:.62rem;letter-spacing:.07em;font-weight:700;white-space:nowrap}
- .read{background:#eef6ef;border:1px solid #d5e5d8;color:#3d7350}
- .controlled{background:#fff6df;border:1px solid #ecdbac;color:#8a692b}
- .dangerous{background:#fdf0ec;border:1px solid #f0d6cb;color:#9d4c34}
+ .read{background:var(--success-soft);border:1px solid var(--line);color:var(--success)}
+ .controlled{background:var(--warning-soft);border:1px solid var(--line);color:var(--warning)}
+ .dangerous{background:var(--danger-soft);border:1px solid var(--line);color:var(--danger)}
 </style>

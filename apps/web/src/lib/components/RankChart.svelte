@@ -37,12 +37,12 @@ let hover=$state(-1);
 .rank{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px}
 .rank li{display:flex;flex-direction:column;gap:5px}
 .rank-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
-.rank-name{font-size:.82rem;font-weight:600;color:#274b36;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rank-value{font-size:.82rem;font-weight:650;color:#1e4634;font-variant-numeric:tabular-nums;white-space:nowrap}
-.rank-sub{font-size:.7rem;color:#7d8d80}
+.rank-name{font-size:.875rem;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank-value{font-size:.875rem;font-weight:650;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.rank-sub{font-size:.7rem;color:var(--muted)}
 /* The track is the slot; the bar never fills it edge to edge -- the leftover is air. */
-.track{background:#eef3ee;border-radius:5px;height:10px;overflow:hidden}
-.bar{height:100%;background:#1a7f5c;border-radius:0 4px 4px 0;transition:width .3s ease}
-.rank li.hovered .rank-name{color:#14301f}
-.rank li.hovered .bar{background:#14684b}
+.track{background:var(--surface-muted);border-radius:5px;height:12px;overflow:hidden}
+.bar{height:100%;background:var(--primary);border-radius:0 4px 4px 0;transition:width .3s ease}
+.rank li.hovered .rank-name{color:var(--primary-text)}
+.rank li.hovered .bar{background:var(--primary-hover)}
 </style>

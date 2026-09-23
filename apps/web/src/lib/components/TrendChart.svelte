@@ -79,16 +79,16 @@ function track(event:PointerEvent){
 {/if}
 
 <style>
-.chart{--series:#1a7f5c}
+.chart{--series:var(--primary)}
 svg{display:block;width:100%;height:auto;touch-action:none}
-.grid{stroke:#e8eee9;stroke-width:1}
+.grid{stroke:var(--line);stroke-width:1}
 .area{fill:var(--series);fill-opacity:.1;stroke:none}
 .line{fill:none;stroke:var(--series);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
 /* 2px surface ring keeps the marker legible where it crosses the line. */
-.dot{fill:var(--series);stroke:#fff;stroke-width:2}
-.crosshair{stroke:#b9c7bd;stroke-width:1}
-.axis{fill:#7d8d80;font-size:12px}
-.mark-label{fill:#3a5c49;font-size:12px;font-weight:600}
-.chart-readout{margin:6px 0 0;font-size:.76rem;color:#6d7d71}
-.chart-readout strong{color:#1e4634;font-variant-numeric:tabular-nums}
+.dot{fill:var(--series);stroke:var(--surface);stroke-width:2}
+.crosshair{stroke:var(--line);stroke-width:1}
+.axis{fill:var(--muted);font-size:12px}
+.mark-label{fill:var(--ink);font-size:12px;font-weight:600}
+.chart-readout{margin:6px 0 0;font-size:.76rem;color:var(--muted)}
+.chart-readout strong{color:var(--ink);font-variant-numeric:tabular-nums}
 </style>

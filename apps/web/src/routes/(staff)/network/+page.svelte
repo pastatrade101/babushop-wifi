@@ -72,5 +72,5 @@ const dash=(value:unknown)=>value===null||value===undefined||value===''?'—':St
 <style>
  .site-card .metrics{margin-bottom:0}
  .state{font-size:1.28rem;letter-spacing:-.03em}
- .small{font-size:.78rem;color:#7b8b7e}
+ .small{font-size:.8125rem;color:var(--muted)}
 </style>
