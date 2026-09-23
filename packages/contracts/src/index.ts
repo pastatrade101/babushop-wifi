@@ -45,7 +45,7 @@ export const SecretRows=T.Object({items:T.Array(Row)},{additionalProperties:fals
 // passed through whole rather than flattened into the Row allowlist, which exists
 // to stop voucher and payment columns leaking.
 const Nested=T.Any();
-export const NetworkSiteRow=T.Object({id:Id,site_id:Id,name:T.String(),router_identity:T.Union([T.String(),T.Null()]),router_os:T.Union([T.String(),T.Null()]),lan_cidrs:T.Array(T.String()),management_cidr:T.Union([T.String(),T.Null()]),site_interface:T.String(),server_tunnel_address:T.Union([T.String(),T.Null()]),omada_inform_url:T.Union([T.String(),T.Null()]),last_discovered_at:T.Union([T.String(),T.Null()]),created_at:T.String(),updated_at:T.String(),device_count:T.Optional(T.Integer()),approved_count:T.Optional(T.Integer()),tunnel:T.Optional(Nested)},{additionalProperties:false});
+export const NetworkSiteRow=T.Object({id:Id,site_id:Id,name:T.String(),vps_preflight:T.Optional(Nested),preflight_captured_at:T.Optional(T.Union([T.String(),T.Null()])),router_identity:T.Union([T.String(),T.Null()]),router_os:T.Union([T.String(),T.Null()]),lan_cidrs:T.Array(T.String()),management_cidr:T.Union([T.String(),T.Null()]),site_interface:T.String(),server_tunnel_address:T.Union([T.String(),T.Null()]),omada_inform_url:T.Union([T.String(),T.Null()]),last_discovered_at:T.Union([T.String(),T.Null()]),created_at:T.String(),updated_at:T.String(),device_count:T.Optional(T.Integer()),approved_count:T.Optional(T.Integer()),tunnel:T.Optional(Nested)},{additionalProperties:false});
 export const NetworkSiteList=T.Object({items:T.Array(NetworkSiteRow)},{additionalProperties:false});
 export const NetworkDeviceRow=T.Object({id:Id,network_site_id:Id,type:T.String(),vendor:T.Union([T.String(),T.Null()]),model:T.Union([T.String(),T.Null()]),mac_address:T.String(),ip_address:T.Union([T.String(),T.Null()]),hostname:T.Union([T.String(),T.Null()]),interface:T.Union([T.String(),T.Null()]),dhcp_status:T.Union([T.String(),T.Null()]),source:T.String(),approved_for_management:T.Boolean(),status:T.String(),last_seen_at:T.Union([T.String(),T.Null()]),created_at:T.String(),updated_at:T.String()},{additionalProperties:false});
 export const NetworkDeviceList=T.Object({items:T.Array(NetworkDeviceRow)},{additionalProperties:false});
@@ -57,3 +57,16 @@ export const NetworkPlanList=T.Object({items:T.Array(NetworkPlanRow)},{additiona
 export const NetworkAuditList=T.Object({items:T.Array(T.Object({id:Id,actor:T.Union([T.String(),T.Null()]),actor_id:T.Union([Id,T.Null()]),action:T.String(),entity_id:T.Union([Id,T.Null()]),details:Nested,created_at:T.String()},{additionalProperties:false}))},{additionalProperties:false});
 export const ApprovalInput=T.Object({approved:T.Boolean()},{additionalProperties:false});
 export const OmadaUrlInput=T.Object({url:T.Union([T.String({maxLength:300}),T.Null()])},{additionalProperties:false});
+// Host facts an administrator captures on the VPS. No secret belongs here: the
+// service accepts only the known keys and refuses anything else.
+export const PreflightInput=T.Object({
+ ipForward:T.Optional(T.String({maxLength:20})),
+ wgManager:T.Optional(T.Union([T.Literal('wg-quick'),T.Literal('systemd-networkd'),T.Literal('manual'),T.Literal('unknown')])),
+ wgUnit:T.Optional(T.String({maxLength:200})),wgUnitEnabled:T.Optional(T.Boolean()),wgUnitActive:T.Optional(T.Boolean()),
+ wgConfigPath:T.Optional(T.String({maxLength:300})),
+ runtimeAllowedIps:T.Optional(T.String({maxLength:500})),persistentAllowedIps:T.Optional(T.String({maxLength:500})),
+ wgConfDirectives:T.Optional(T.Array(T.String({maxLength:500}),{maxItems:50})),
+ routeToTarget:T.Optional(T.String({maxLength:500})),adminPortFree:T.Optional(T.Boolean()),
+ hostFirewall:T.Optional(T.String({maxLength:300})),adminPortReachable:T.Optional(T.Boolean()),adminPortProbe:T.Optional(T.String({maxLength:300})),
+ peerPublicKey:T.Optional(T.String({maxLength:100})),
+},{additionalProperties:false});

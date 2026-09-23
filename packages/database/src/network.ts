@@ -163,12 +163,13 @@ export async function plan(staff:Staff,siteId:string){
    siteId,snapshot:snap,
    managementTargets:approved.map(d=>({address:String(d.ip_address),label:d.hostname??d.mac_address})),
    targetInterface:approved[0].interface??'',
-   // No preflight facts are passed: this process runs in its own network
-   // namespace and cannot see the host's routing table, forwarding flag or
-   // WireGuard state. The plan marks them UNVERIFIED and carries the commands
-   // that capture them, rather than reporting the container's values as the
-   // server's.
-   vps:{siteInterface:record.site_interface,tunnelAddress:record.server_tunnel_address??'10.77.0.1'},
+   // Host facts come from what an administrator captured, never from this
+   // process: it runs in its own network namespace, so its routes and
+   // /proc/sys values are not the server's. Anything never captured stays
+   // UNVERIFIED and blocks the plan.
+   vps:{siteInterface:record.site_interface,tunnelAddress:record.server_tunnel_address??'10.77.0.1',
+    peerPublicKey:record.vps_preflight?.peerPublicKey,
+    preflight:{...record.vps_preflight,capturedAt:record.preflight_captured_at?.toISOString()}},
   });
   return tx(async db=>{
    await db.query("update wifi.network_plans set status='SUPERSEDED' where network_site_id=$1 and status='DRAFT'",[siteId]);
@@ -188,6 +189,33 @@ export async function auditTrail(siteId:string){
  await site(siteId);
  return {items:(await pool.query(`select a.*, p.display_name actor from wifi.audit_logs a left join wifi.staff_profiles p on p.id=a.actor_id
   where a.action like 'NETWORK%' order by a.created_at desc limit 50`)).rows};
+}
+
+/**
+ * Records the host facts the planner cannot observe for itself.
+ *
+ * Only known keys are kept, so a caller cannot use this as general storage, and
+ * the values are capped in length. A recapture replaces the set wholesale rather
+ * than merging: a half-updated preflight is worse than an obviously old one.
+ */
+const PREFLIGHT_KEYS=['ipForward','wgManager','wgUnit','wgUnitEnabled','wgUnitActive','wgConfigPath','runtimeAllowedIps','persistentAllowedIps','wgConfDirectives','routeToTarget','adminPortFree','hostFirewall','adminPortReachable','adminPortProbe','peerPublicKey'];
+export async function setPreflight(staff:Staff,siteId:string,facts:Record<string,unknown>){
+ await site(siteId);
+ const clean:Record<string,unknown>={};
+ for(const key of PREFLIGHT_KEYS){
+  const value=facts[key];
+  if(value===undefined||value===null)continue;
+  if(typeof value==='string')requireValue(value.length<=500,400,`${key} is too long.`);
+  if(Array.isArray(value))requireValue(value.length<=50&&value.every(v=>typeof v==='string'&&v.length<=500),400,`${key} must be up to 50 short strings.`);
+  clean[key]=value;
+ }
+ const unknown=Object.keys(facts).filter(key=>!PREFLIGHT_KEYS.includes(key));
+ requireValue(unknown.length===0,400,'Unrecognised preflight keys: '+unknown.join(', '));
+ return tx(async db=>{
+  const row=(await db.query('update wifi.network_sites set vps_preflight=$2,preflight_captured_at=now() where id=$1 returning *',[siteId,clean])).rows[0];
+  await audit(db,staff.id,'NETWORK_PREFLIGHT_CAPTURED',siteId,{keys:Object.keys(clean)});
+  return row;
+ });
 }
 
 /** The Omada site URL the operator pastes into the EAP. Stored, never fetched. */

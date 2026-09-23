@@ -60,7 +60,10 @@ export type VpsFacts={
   wgManager?:'wg-quick'|'systemd-networkd'|'manual'|'unknown';
   wgUnit?:string;wgUnitEnabled?:boolean;wgUnitActive?:boolean;wgConfigPath?:string;
   runtimeAllowedIps?:string;persistentAllowedIps?:string;
+  /** The Table / PostUp / PostDown / AllowedIPs lines of the site conf, verbatim. */
+  wgConfDirectives?:string[];
   routeToTarget?:string;adminPortFree?:boolean;
+  hostFirewall?:string;adminPortReachable?:boolean;adminPortProbe?:string;
  };
 };
 
@@ -86,6 +89,25 @@ export type PlanInput={
 /** Router paths that would touch a paying customer. The plan is refused if it names one. */
 const CUSTOMER_PATHS=['ip/hotspot','ip/dhcp-server','ip/dns','interface/bridge','interface/vlan','queue','ip/firewall/nat','ip/route','interface/wireguard','system/'];
 
+export type RoutingMode='default'|'off'|'custom-table'|'custom-commands'|'unknown';
+
+/**
+ * Whether wg-quick manages this interface's routes.
+ *
+ * It matters because the persistent AllowedIPs edit only recreates the target
+ * route when wg-quick is the thing installing routes. "Table = off" or hand-rolled
+ * PostUp commands mean it is not, and the management path would quietly disappear
+ * at the next restart. Absence of evidence is reported as `unknown`, never as
+ * `default`: the two look identical from outside the config file.
+ */
+export function classifyRouting(directives?:string[]):RoutingMode{
+ if(!directives)return 'unknown';
+ const table=directives.map(line=>/^\s*(?:\d+:)?\s*Table\s*=\s*(\S+)/i.exec(line)?.[1]).find(Boolean);
+ if(table)return table.toLowerCase()==='off'?'off':'custom-table';
+ if(directives.some(line=>/^\s*(?:\d+:)?\s*Post(Up|Down)\s*=.*\bip\s+route\b/i.test(line)))return 'custom-commands';
+ return 'default';
+}
+
 const forwardDropToInterface=(rules:Row[],iface:string)=>rules.find(r=>r.chain==='forward'&&r.action==='drop'&&r['out-interface']===iface&&!r['in-interface']&&!r['connection-state'])??null;
 
 /** The rule that stops the device replying to the tunnel: a drop for private destinations. */
@@ -108,6 +130,8 @@ export function buildPlan(input:PlanInput):Plan{
  const marker=`managed-by=${OWNER} site=${siteId} provision=${provisionId}`;
  const adminInterface=vps.adminInterface??'wg-admin';
  const adminPort=vps.adminListenPort??51821;
+ const confPath=facts.wgConfigPath??`/etc/wireguard/${vps.siteInterface}.conf`;
+ const routing=classifyRouting(facts.wgConfDirectives);
  const blockers:string[]=[],warnings:string[]=[];
  const creates:PlanAction[]=[],changes:PlanAction[]=[],existing:ExistingObject[]=[];
 
@@ -150,9 +174,25 @@ export function buildPlan(input:PlanInput):Plan{
   check('admin-port',`UDP ${adminPort} is free for ${adminInterface}`,`ss -lun sport = :${adminPort}`,'no listener',facts.adminPortFree===undefined?undefined:String(facts.adminPortFree),v=>v==='true',
    facts.adminPortFree?'Free.':`Something is already listening on UDP ${adminPort}. Choose another port.`,
    'Not captured.'),
+  check('wg-routing',`Whether wg-quick manages routes on ${vps.siteInterface}`,`grep -nE '^[[:space:]]*(Table|PostUp|PostDown|AllowedIPs)[[:space:]]*=' ${confPath}`,'no Table directive and no PostUp route commands',
+   facts.wgConfDirectives?(routing==='default'?'default wg-quick routing':routing):undefined,()=>routing==='default',
+   routing==='default'
+    ?`No Table directive and no PostUp/PostDown route commands, so wg-quick installs a route per AllowedIP at "up". The persistent AllowedIPs edit therefore does recreate the target route.`
+    :`Routing is ${routing}. wg-quick will not recreate the target route, so the route is persisted separately below.`,
+   'Not captured. Until it is, do not assume the persistent AllowedIPs change recreates the target route: "Table = off" and default routing are indistinguishable from outside the config file.'),
+  check('admin-port-reachable',`UDP ${adminPort} reaches the host from the internet`,`# listener on ${adminPort}, datagram sent from outside`,'datagram delivered',
+   facts.adminPortReachable===undefined?undefined:String(facts.adminPortReachable),v=>v==='true',
+   facts.adminPortReachable
+    ?`UDP ${adminPort} already reachable — no change. ${facts.adminPortProbe??''} Host firewall: ${facts.hostFirewall??'unknown'}.`
+    :`UDP ${adminPort} did not arrive. The rule below opens it, and nothing else.`,
+   'Not captured. Probe end to end rather than reading rules: the provider firewall is not visible on the host.'),
  ];
+ // Captured facts describe the host as it was. A plan built on month-old
+ // observations is a plan about a server that may no longer exist.
+ const age=facts.capturedAt?(Date.now()-Date.parse(facts.capturedAt))/86400000:null;
+ if(age!==null&&Number.isFinite(age)&&age>7)warnings.push(`The host facts were captured ${Math.floor(age)} days ago. Recapture them before applying: AllowedIPs, routes and firewall state can all have moved since.`);
  for(const item of preflight){
-  if(item.status==='UNVERIFIED'&&['wg-persistence','runtime-allowed-ips','persistent-allowed-ips'].includes(item.id))
+  if(item.status==='UNVERIFIED'&&['wg-persistence','runtime-allowed-ips','persistent-allowed-ips','wg-routing'].includes(item.id))
    blockers.push(`Preflight "${item.id}" is unverified. ${item.note}`);
  }
 
@@ -185,7 +225,11 @@ export function buildPlan(input:PlanInput):Plan{
   why:`"wg set ... allowed-ips" changes which peer WireGuard will accept and encrypt for, but adds no Linux route. Observed today: ${facts.routeToTarget??'not captured'} — so the packet would go out the WAN instead of the tunnel.`,
   rest:null,
   command:targets.map(t=>`ip route add ${t.address}/32 dev ${vps.siteInterface}`).join('\n'),
-  persistent:`Covered by the AllowedIPs entry in ${facts.wgConfigPath??`/etc/wireguard/${vps.siteInterface}.conf`}: wg-quick installs a route for each AllowedIP when it brings the interface up. The explicit "ip route add" is only needed because the interface is already running and must not be restarted.`,
+  persistent:routing==='default'
+   ?`Confirmed from ${confPath}: no Table directive and no PostUp/PostDown route commands, so wg-quick installs a route for each AllowedIP when it brings the interface up. The AllowedIPs edit below therefore recreates this route after a restart. The explicit "ip route add" is needed only because the interface is already running and must not be restarted.`
+   :routing==='unknown'
+    ?`UNKNOWN — and therefore not assumed. Capture the Table/PostUp/PostDown directives in ${confPath} first. If wg-quick does not install routes on this interface, the AllowedIPs edit will not recreate this route and the management path disappears at the next restart.`
+    :`${confPath} uses ${routing==='off'?'"Table = off"':routing==='custom-table'?'a custom routing table':'its own PostUp/PostDown route commands'}, so wg-quick will NOT recreate this route from AllowedIPs. It is persisted independently, in /etc/wireguard/${adminInterface}.conf:\n`+targets.map(t=>`PostUp = ip route add ${t.address}/32 dev ${vps.siteInterface}`).join('\n')+'\n'+targets.map(t=>`PostDown = ip route del ${t.address}/32 dev ${vps.siteInterface}`).join('\n'),
   rollback:targets.map(t=>`ip route del ${t.address}/32 dev ${vps.siteInterface}`).join('\n'),
   affectsExisting:null,
  });
@@ -225,6 +269,23 @@ export function buildPlan(input:PlanInput):Plan{
   affectsExisting:`${vps.siteInterface} peer ${vps.peerPublicKey??'<router public key>'} (runtime and on disk)`,
  });
  warnings.push(`Do not restart ${vps.siteInterface} to apply the persistent change. Hotspot RADIUS runs over that tunnel, so bouncing it interrupts voucher logins for customers at the shop. Apply the runtime change with "wg set" and edit the file for the next restart; the two must be done together or the management path silently disappears at the next reboot.`);
+
+ // Only planned when an end-to-end probe failed. A reachable port needs no rule,
+ // and adding one anyway would be a change made for the sake of the document.
+ if(facts.adminPortReachable===false){
+  const ufw=(facts.hostFirewall??'').toLowerCase().includes('ufw enabled=yes');
+  creates.push({
+   id:'vps-admin-port',target:'VPS',kind:'CREATE',
+   summary:`Permit inbound UDP ${adminPort} for ${adminInterface}`,
+   why:`The probe to UDP ${adminPort} did not arrive, so something on the path drops it. This opens that one port and nothing else. No existing rule is removed and no firewall is disabled or flushed.`,
+   rest:null,
+   command:ufw?`ufw allow ${adminPort}/udp comment 'portal-remote-access ${adminInterface}'`:`iptables -I INPUT -p udp --dport ${adminPort} -j ACCEPT`,
+   persistent:ufw?'ufw persists its own rules.':`Written as PostUp/PostDown in /etc/wireguard/${adminInterface}.conf so the rule lives and dies with the interface:\nPostUp = iptables -I INPUT -p udp --dport ${adminPort} -j ACCEPT\nPostDown = iptables -D INPUT -p udp --dport ${adminPort} -j ACCEPT`,
+   rollback:ufw?`ufw delete allow ${adminPort}/udp`:`iptables -D INPUT -p udp --dport ${adminPort} -j ACCEPT`,
+   affectsExisting:null,
+  });
+  warnings.push(`If the probe failed at the provider firewall rather than on the host, the rule above will not be enough: open UDP ${adminPort} in the Contabo panel as well.`);
+ }
 
  if(facts.ipForward!==undefined&&facts.ipForward.trim()!=='1')changes.push({
   id:'vps-ip-forward',target:'VPS',kind:'MODIFY',
@@ -295,6 +356,12 @@ export function buildPlan(input:PlanInput):Plan{
   'The router needs no WireGuard peer change, no route and no change to the customer path.',
   `Only ${approvedTargets.join(', ')} becomes reachable. No other address on ${guest} is opened.`,
   'Customer traffic never enters the VPS: the SNAT matches only the admin subnet towards an approved target, and the customer internet path stays customer → EAP → MikroTik → ISP.',
+  facts.adminPortReachable===true?`UDP ${adminPort} already reachable — no change.`
+   :facts.adminPortReachable===false?`UDP ${adminPort} is not reachable: one reversible accept rule is planned, and no existing firewall rule is removed, disabled or flushed.`
+   :`UDP ${adminPort} reachability is unverified.`,
+  routing==='default'?`The persistent AllowedIPs edit does recreate the target route: ${confPath} has no Table directive and no PostUp/PostDown route commands, so wg-quick installs a route per AllowedIP.`
+   :routing==='unknown'?'Route persistence is UNVERIFIED and has not been assumed.'
+   :`wg-quick does not manage routes here (${routing}), so the target route carries its own persistence.`,
  ];
  if(customerTouching.length)blockers.push(`Plan names a customer-facing path: ${customerTouching.join(', ')}.`);
 
@@ -318,7 +385,11 @@ export function buildPlan(input:PlanInput):Plan{
     configPath:facts.wgConfigPath??null,
     runtimeAllowedIps:facts.runtimeAllowedIps??'<unverified>',
     persistentAllowedIps:facts.persistentAllowedIps??'<unverified>',
-    routeToTarget:facts.routeToTarget??'<unverified>'},
+    routeToTarget:facts.routeToTarget??'<unverified>',
+    routingMode:routing,
+    confDirectives:facts.wgConfDirectives??['<unverified>'],
+    hostFirewall:facts.hostFirewall??'<unverified>',
+    adminPortReachable:facts.adminPortReachable??'<unverified>'},
   },
   expectedAfterState:{
    router:{firewallRuleCount:rules.length+creates.filter(a=>a.target==='MIKROTIK').length,

@@ -2,7 +2,7 @@ import {it,expect} from 'vitest';
 import {parseCidr,overlaps,contains,containsAny,selectManagementCidr,normalizeMac,formatCidr} from '../packages/network/src/cidr.ts';
 import {devicesFrom,findDeviceByMac,lanCidrs,assertManageable,snapshot as readSnapshot} from '../packages/network/src/discovery.ts';
 import {analyzeInputPath,parseRtt,testDeviceReachability,tcpProbe} from '../packages/network/src/diagnostics.ts';
-import {buildPlan} from '../packages/network/src/wireguard-plan.ts';
+import {buildPlan,classifyRouting} from '../packages/network/src/wireguard-plan.ts';
 import {snapshot,firewallFilter} from './network-fixture.ts';
 
 const EAP='D4:D6:DF:A5:F6:6C';
@@ -114,7 +114,9 @@ const vpsFacts={
  wgManager:'wg-quick' as const,wgUnit:'wg-quick@wg-babu.service',wgUnitEnabled:true,wgUnitActive:true,
  wgConfigPath:'/etc/wireguard/wg-babu.conf',
  runtimeAllowedIps:'10.77.0.2/32',persistentAllowedIps:'10.77.0.2/32',
+ wgConfDirectives:['9:AllowedIPs = 10.77.0.2/32'],
  routeToTarget:'10.78.0.20 via 194.163.128.1 dev eth0 src 194.163.139.108',adminPortFree:true,
+ hostFirewall:'ufw ENABLED=no; nftables inactive',adminPortReachable:true,adminPortProbe:'datagram delivered end to end.',
 };
 const PROVISION='11111111-2222-4333-8444-555555555555';
 const plan=(preflight:any=vpsFacts,provisionId=PROVISION)=>buildPlan({
@@ -257,4 +259,73 @@ it('refuses to guess when there is no approved target',()=>{
  const result=buildPlan({siteId:'s',snapshot,managementTargets:[],targetInterface:'babu-guest',vps:{siteInterface:'wg-babu',tunnelAddress:'10.77.0.1',preflight:vpsFacts}});
  expect(result.blockers.join(' ')).toContain('No approved management target');
  expect(result.creates.filter(a=>a.target==='MIKROTIK')).toHaveLength(0);
+});
+
+it('reads route management out of the config rather than inferring it',()=>{
+ expect(classifyRouting(['9:AllowedIPs = 10.77.0.2/32'])).toBe('default');
+ expect(classifyRouting(['3:Table = off','9:AllowedIPs = 10.77.0.2/32'])).toBe('off');
+ expect(classifyRouting(['3:Table = 200'])).toBe('custom-table');
+ expect(classifyRouting(['4:PostUp = ip route add 10.9.0.0/24 dev %i'])).toBe('custom-commands');
+ // A PostUp that is not about routes does not make routing custom.
+ expect(classifyRouting(['4:PostUp = iptables -A FORWARD -i %i -j ACCEPT'])).toBe('default');
+ // Nothing captured is never silently read as "default".
+ expect(classifyRouting(undefined)).toBe('unknown');
+});
+
+it('only claims the AllowedIPs edit recreates the route when the config says so',()=>{
+ const byDefault=plan().creates.find(a=>a.id==='vps-route-to-target')!;
+ expect(byDefault.persistent).toContain('no Table directive and no PostUp/PostDown route commands');
+ expect(plan().preflight.find(c=>c.id==='wg-routing')).toMatchObject({status:'PASS'});
+
+ // Table = off: wg-quick installs nothing, so the route carries its own persistence.
+ const off=plan({...vpsFacts,wgConfDirectives:['3:Table = off','9:AllowedIPs = 10.77.0.2/32']});
+ const offRoute=off.creates.find(a=>a.id==='vps-route-to-target')!;
+ expect(offRoute.persistent).toContain('will NOT recreate this route');
+ expect(offRoute.persistent).toContain('PostUp = ip route add 10.78.0.20/32 dev wg-babu');
+ expect(offRoute.persistent).toContain('PostDown = ip route del 10.78.0.20/32 dev wg-babu');
+ expect(off.guarantees.join(' ')).toContain('wg-quick does not manage routes here');
+
+ // Unverified is a blocker, not an assumption.
+ const blind=plan({...vpsFacts,wgConfDirectives:undefined});
+ expect(blind.blockers.join(' ')).toContain('wg-routing');
+ expect(blind.creates.find(a=>a.id==='vps-route-to-target')!.persistent).toContain('not assumed');
+ expect(blind.guarantees.join(' ')).toContain('Route persistence is UNVERIFIED');
+});
+
+it('opens UDP 51821 only when a probe proves it is closed',()=>{
+ const reachable=plan();
+ expect(reachable.guarantees).toContain('UDP 51821 already reachable — no change.');
+ expect(reachable.creates.some(a=>a.id==='vps-admin-port')).toBe(false);
+
+ const closed=plan({...vpsFacts,adminPortReachable:false});
+ const rule=closed.creates.find(a=>a.id==='vps-admin-port')!;
+ expect(rule.command).toBe('iptables -I INPUT -p udp --dport 51821 -j ACCEPT');
+ expect(rule.rollback).toBe('iptables -D INPUT -p udp --dport 51821 -j ACCEPT');
+ expect(rule.why).toContain('No existing rule is removed and no firewall is disabled or flushed');
+ // A host running ufw gets the ufw form instead.
+ const withUfw=plan({...vpsFacts,adminPortReachable:false,hostFirewall:'ufw ENABLED=yes'});
+ expect(withUfw.creates.find(a=>a.id==='vps-admin-port')!.command).toContain('ufw allow 51821/udp');
+ expect(withUfw.creates.find(a=>a.id==='vps-admin-port')!.rollback).toBe('ufw delete allow 51821/udp');
+ // The provider firewall is not visible on the host, and the plan says so.
+ expect(closed.warnings.join(' ')).toContain('Contabo panel');
+});
+
+it('reaches the before-state the operator expected',()=>{
+ const before=plan().beforeState.vps as any,after=plan().expectedAfterState.vps as any;
+ expect(before.runtimeAllowedIps).toBe('10.77.0.2/32');
+ expect(before.persistentAllowedIps).toBe('10.77.0.2/32');
+ expect(before.routeToTarget).toContain('dev eth0');
+ expect(before.ipForward).toBe('1');
+ expect(before.routingMode).toBe('default');
+ expect(after.runtimeAllowedIps).toBe('10.77.0.2/32,10.78.0.20/32');
+ expect(after.persistentAllowedIps).toBe('10.77.0.2/32,10.78.0.20/32');
+ expect(after.routes).toContain('10.78.0.20/32 dev wg-babu');
+ expect(after.ipForward).toBe('1');
+ expect(after.unchanged).toContain('the RADIUS binding on the tunnel address');
+});
+
+it('is no longer blocked once every rollback value is captured',()=>{
+ expect(plan().blockers).toEqual([]);
+ expect(plan().preflight.filter(c=>c.status==='UNVERIFIED')).toEqual([]);
+ expect(plan().preflight.filter(c=>c.status==='ACTION_REQUIRED').map(c=>c.id)).toEqual(['target-route']);
 });

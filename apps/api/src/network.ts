@@ -34,5 +34,6 @@ export function registerNetwork(route:Route){
  route('POST','/network/sites/:id/wireguard/plan',undefined,S.NetworkPlanRow,async(r:any)=>network.plan(r.staff,r.params.id),true,slow(10));
  route('GET','/network/sites/:id/wireguard/plans',undefined,S.NetworkPlanList,async(r:any)=>network.plans(r.params.id),true,params);
 
+ route('PATCH','/network/sites/:id/preflight',S.PreflightInput,S.NetworkSiteRow,async(r:any)=>network.setPreflight(r.staff,r.params.id,r.body),true,params);
  route('PATCH','/network/sites/:id/omada',S.OmadaUrlInput,S.NetworkSiteRow,async(r:any)=>network.setOmadaUrl(r.staff,r.params.id,r.body.url),true,params);
 }
