@@ -47,8 +47,13 @@ onMount(()=>{check();return()=>clearTimeout(timer);});
  <p class="voucher-code">{code}</p>
  <button class="button full" onclick={copy}>{copied?'Copied ✓':'Copy code'}</button>
  <p class="small"><strong>Write this down now.</strong> For your security it is shown once and is not sent by SMS.</p>
- <a class="button secondary full" href="http://10.78.0.1/login">Open Wi-Fi sign-in →</a>
- <p class="small muted">Copy your code first, then enter it on the Wi-Fi sign-in screen. This link works while connected to the shop Wi-Fi.</p>
+ <!-- The code rides in the fragment, never the query string: a fragment is not
+      sent to the server, so the voucher stays out of the router's HTTP log. The
+      sign-in page fills it in and submits it, because only that page can do the
+      CHAP handshake the hotspot requires. -->
+ <a class="button full connect" href="http://10.78.0.1/login#code={code.replace(/-/g,'')}">Connect me now →</a>
+ <p class="small muted">This connects you automatically while you are on the shop Wi-Fi. Keep your code in case you need to sign in again.</p>
+ <a class="button secondary full" href="http://10.78.0.1/login">Enter it myself instead</a>
 
 {:else if phase==='refund'}
  <p class="eyebrow">NEEDS ATTENTION</p><h1>Your payment needs the attendant.</h1>
