@@ -12,7 +12,7 @@
     "check": "pnpm -r check",
     "build": "pnpm -r build",
     "lint": "eslint .",
-    "test": "vitest run tests/unit.test.ts tests/api.test.ts tests/network.test.ts tests/network-access.test.ts tests/csv.test.ts tests/radius.test.ts",
+    "test": "vitest run tests/unit.test.ts tests/api.test.ts tests/network.test.ts tests/network-access.test.ts tests/payments-azam.test.ts tests/csv.test.ts tests/radius.test.ts",
     "test:integration": "vitest run tests/integration.test.ts",
     "test:e2e": "playwright test",
     "db:start": "supabase start",

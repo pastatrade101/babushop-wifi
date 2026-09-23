@@ -13,7 +13,10 @@ export const SaleInput=T.Object({reservation_id:Id,cash_received:T.Boolean(),cus
 export const ContextInput=T.Object({clientMac:Text(32),apMac:Text(32),ssidName:Text(64),radioId:Text(2),site:Text(100),clientIp:T.Optional(Text(64))},{additionalProperties:false});
 // Self-service purchase. The phone is optional and only forwarded to the payment
 // provider so the buyer recognises the charge; it is never required to buy.
-export const PurchaseInput=T.Object({package_id:Id,phone:T.Optional(T.String({maxLength:30}))},{additionalProperties:false});
+export const PurchaseInput=T.Object({package_id:Id,phone:T.Optional(T.String({maxLength:30})),
+ // Required by push providers, which ask the buyer's own network to prompt the
+ // handset. Hosted-page providers ignore it and let the buyer choose there.
+ network:T.Optional(T.String({maxLength:20}))},{additionalProperties:false});
 // The claim token is the buyer's only handle on their purchase. It is POSTed,
 // never placed in a URL, so it cannot leak through history, logs or a referrer.
 export const ClaimInput=T.Object({claim_token:Text(200)},{additionalProperties:false});

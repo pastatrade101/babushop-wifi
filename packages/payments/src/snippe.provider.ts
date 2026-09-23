@@ -15,6 +15,9 @@ interface SnippeEvent {id?:string;type?:string;data?:{reference?:string;status?:
 
 export const snippeProvider:PaymentProvider={
  name:'snippe',
+ flow:'redirect',
+ networks:[],                 // the buyer picks their network on Snippe's own page
+ confirmsOutOfBand:false,     // callbacks are HMAC-signed over the raw body
 
  async createCheckout(input:CheckoutInput):Promise<CheckoutResult>{
   const amount=Math.round(input.amount);
@@ -41,7 +44,7 @@ export const snippeProvider:PaymentProvider={
   try{json=text?JSON.parse(text) as SessionResponse:{};}catch{/* non-JSON body */}
   // Never echo the provider's raw message to the buyer: it can carry account detail.
   if(!response.ok||!json.data?.checkout_url)throw new Problem(502,'The payment service could not start this purchase. Please try again or pay the attendant.');
-  return {provider:'snippe',reference:json.data.reference||input.reference,checkout_url:json.data.checkout_url};
+  return {provider:'snippe',reference:json.data.reference||input.reference,checkout_url:json.data.checkout_url,flow:'redirect',instruction:null};
  },
 
  verifyWebhook(rawBody,headers){
@@ -69,6 +72,8 @@ export const snippeProvider:PaymentProvider={
  },
 
  isPaid(status:string){return PAID.has(status.toLowerCase());},
+
+ isFailure(status:string){return FAILED.has(status.toLowerCase());},
 
  async fetchStatus(reference:string):Promise<PaymentStatus|null>{
   if(!reference)return null;

@@ -10,7 +10,7 @@ import * as sales from '../../../packages/database/src/sales.ts';
 import * as access from '../../../packages/database/src/access.ts';
 import * as purchases from '../../../packages/database/src/purchases.ts';
 import * as catalogue from '../../../packages/database/src/catalogue.ts';
-import {paymentsEnabled} from '../../../packages/payments/src/index.ts';
+import {paymentProvider} from '../../../packages/payments/src/index.ts';
 import {digest,csvCell} from '../../../packages/database/src/crypto.ts';
 import {type Adapter,adapterFromEnv} from '../../../packages/omada/src/index.ts';
 import * as S from '../../../packages/contracts/src/index.ts';
@@ -116,15 +116,31 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
  route('POST','/portal/status',T.Object({status_token:S.Text(100)},{additionalProperties:false}),T.Object({state:T.String(),expires_at:T.Union([T.String(),T.Null()]),attempt_state:T.Union([T.String(),T.Null()])}),async(r:any)=>access.status(r.body.status_token),false,{config:{rateLimit:{hook:'preHandler',max:120,timeWindow:'1 minute',keyGenerator:(r:any)=>digest(r.body?.status_token||r.ip,'PORTAL_CONTEXT_SECRET')}}});
  // Self-service purchase. Unauthenticated by design -- a customer buying a
  // voucher has no account. Cash sales at the counter are unaffected.
- route('GET','/portal/shop',undefined,T.Object({enabled:T.Boolean(),items:T.Array(T.Any())},{additionalProperties:false}),async()=>({enabled:paymentsEnabled(),...(paymentsEnabled()?await purchases.catalogue():{items:[]})}),false,{config:{rateLimit:{max:120,timeWindow:'1 minute'}}});
- route('POST','/portal/purchase',S.PurchaseInput,T.Object({reference:T.String(),claim_token:T.String(),checkout_url:T.String(),amount_tzs:T.Integer(),expires_at:T.String()},{additionalProperties:false}),async(r:any)=>purchases.start(r.body),false,{config:{rateLimit:{max:10,timeWindow:'1 minute'}}});
+ // The shop tells the page how to pay, not who takes the money: `flow` decides
+ // whether the buyer is sent away or prompted on their handset, and `networks`
+ // is only non-empty when we have to ask which one to push to.
+ route('GET','/portal/shop',undefined,T.Object({enabled:T.Boolean(),flow:T.String(),networks:T.Array(T.Object({value:T.String(),label:T.String()},{additionalProperties:false})),items:T.Array(T.Any())},{additionalProperties:false}),async()=>{
+  const provider=paymentProvider();
+  return {enabled:!!provider,flow:provider?.flow||'redirect',networks:provider?.networks||[],...(provider?await purchases.catalogue():{items:[]})};
+ },false,{config:{rateLimit:{max:120,timeWindow:'1 minute'}}});
+ route('POST','/portal/purchase',S.PurchaseInput,T.Object({reference:T.String(),claim_token:T.String(),checkout_url:T.Union([T.String(),T.Null()]),flow:T.String(),instruction:T.Union([T.String(),T.Null()]),amount_tzs:T.Integer(),expires_at:T.String()},{additionalProperties:false}),async(r:any)=>purchases.start(r.body),false,{config:{rateLimit:{max:10,timeWindow:'1 minute'}}});
  route('POST','/portal/purchase/status',S.ClaimInput,T.Object({status:T.String(),code:T.Union([T.String(),T.Null()]),package_name:T.Union([T.String(),T.Null()]),duration_minutes:T.Optional(T.Integer()),message:T.Union([T.String(),T.Null()])},{additionalProperties:false}),async(r:any)=>purchases.status(r.body.claim_token),false,{config:{rateLimit:{hook:'preHandler',max:120,timeWindow:'1 minute',keyGenerator:(r:any)=>digest(r.body?.claim_token||r.ip,'PORTAL_CONTEXT_SECRET')}}});
- // Authenticated by HMAC over the raw body, not a staff token. Always answers
- // 200 once the signature is valid, so the provider stops retrying a delivered
- // event; failures are recorded rather than surfaced to the provider.
- app.post('/api/v1/portal/payments/webhook/snippe',{config:{rateLimit:{max:240,timeWindow:'1 minute'}}},async(r:any,reply:any)=>{
+ // Our own callback endpoint, on our own domain. Authenticated by the provider's
+ // own scheme, not a staff token. Always answers 200 once authentic, so the
+ // provider stops retrying a delivered event; failures are recorded rather than
+ // surfaced to the provider.
+ const deliver=async(r:any,reply:any)=>{
   try{return await purchases.webhook(r.rawBody??'',r.headers);}
   catch(e:any){const status=e instanceof Problem?e.status:500;if(status===401)return reply.code(401).send({error:'Invalid signature'});app.log?.error?.({err:'webhook'},'payment webhook failed');return reply.code(status===400?400:500).send({error:'Could not process the event'});}
+ };
+ app.post('/api/v1/portal/payments/webhook/snippe',{config:{rateLimit:{max:240,timeWindow:'1 minute'}}},deliver);
+ // AzamPay does not sign its callbacks, so the secret is the last path segment
+ // of the URL registered with them. It is moved into a header before the
+ // provider verifies it, so the check lives with the provider and the secret
+ // never has to be re-read here.
+ app.post('/api/v1/portal/payments/webhook/azam/:token',{config:{rateLimit:{max:240,timeWindow:'1 minute'}}},async(r:any,reply:any)=>{
+  r.headers['x-callback-token']=r.headers['x-callback-token']||String(r.params.token||'');
+  return deliver(r,reply);
  });
  return app;
 }

@@ -7,12 +7,17 @@ const money=(n:number)=>new Intl.NumberFormat('en-TZ').format(n)+' TZS';
 // to the customer buying it as to the cashier selling it. It also says
 // "1 week" where a local hours-only version said "168 hours".
 import {formatDuration} from '$lib/duration';
-// Hand the claim token to the browser only, then leave for the hosted checkout.
-// sessionStorage keeps it out of the URL, out of history and out of any referrer.
+const push=$derived(data.flow==='push');
+// Hand the claim token to the browser only, then move on. sessionStorage keeps
+// it out of the URL, out of history and out of any referrer.
+//
+// Two destinations, because the two payment shapes end differently: a hosted
+// page takes the buyer away, while a push leaves them here and asks their
+// network to prompt the handset, so we send them straight to the waiting screen.
 $effect(()=>{
- if(!form?.checkout_url||!form?.claim_token)return;
+ if(!form?.claim_token)return;
  try{sessionStorage.setItem('jw_claim',form.claim_token);}catch{/* private mode: the reference on screen is the fallback */}
- window.location.href=form.checkout_url;
+ window.location.href=form.checkout_url||'/buy/done';
 });
 </script>
 <svelte:head><title>Buy Wi-Fi · {data.brand}</title><meta name="robots" content="noindex"></svelte:head>
@@ -43,12 +48,25 @@ $effect(()=>{
      <span class="package-price">{money(item.price_tzs)}</span>
     </label>
    {/each}
-   <label for="phone">Mobile money number <span class="small muted">(optional)</span></label>
-   <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="30" placeholder="07XX XXX XXX">
-   <button class="button full" disabled={busy||!chosen}>{busy?'Opening payment…':'Continue to payment →'}</button>
+   {#if push}
+    <label for="network">Mobile money network</label>
+    <select id="network" name="network" required>
+     {#each data.networks as option (option.value)}<option value={option.value}>{option.label}</option>{/each}
+    </select>
+    <label for="phone">Mobile money number</label>
+    <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="30" placeholder="07XX XXX XXX" required>
+   {:else}
+    <label for="phone">Mobile money number <span class="small muted">(optional)</span></label>
+    <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="30" placeholder="07XX XXX XXX">
+   {/if}
+   <button class="button full" disabled={busy||!chosen}>{busy?(push?'Sending request…':'Opening payment…'):(push?'Pay with mobile money →':'Continue to payment →')}</button>
   </fieldset>
  </form>
- <p class="small muted">You pay on your mobile money provider's secure page. We never see your PIN.</p>
+ {#if push}
+  <p class="small muted">Your phone will ask you to approve the payment. Enter your mobile money PIN on your own handset — we never see it.</p>
+ {:else}
+  <p class="small muted">You pay on your mobile money provider's secure page. We never see your PIN.</p>
+ {/if}
  <p class="small muted">Your code is held for 15 minutes while you pay.</p>
 {/if}
 

@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {pool,tx,audit,requireValue,SITE} from './index.ts';
 import {digest,decrypt,present,token} from './crypto.ts';
-import {paymentProvider,webhookUrl,isFailure} from '../../payments/src/index.ts';
+import {paymentProvider,webhookUrl} from '../../payments/src/index.ts';
 
 // Self-service voucher purchase by mobile money, alongside the cash counter.
 //
@@ -30,7 +30,7 @@ export async function catalogue(){
  * Reserve one voucher and open a hosted checkout. Returns the claim token to
  * the buyer's browser only -- it is the sole way to retrieve the code later.
  */
-export async function start(input:{package_id:string;phone?:string}){
+export async function start(input:{package_id:string;phone?:string;network?:string}){
  const provider=paymentProvider();
  requireValue(provider,503,'Mobile payment is unavailable right now. Please pay the attendant.');
  const claim=token(),reference='JW-'+randomUUID().toUpperCase();
@@ -54,8 +54,8 @@ export async function start(input:{package_id:string;phone?:string}){
   checkout=await provider!.createCheckout({
    amount:intent.amount_tzs,currency:'TZS',
    description:(process.env.WIFI_BRAND||'WIFI')+' voucher',
-   reference,customer:{phone:input.phone},
-   returnUrl:(process.env.APP_ORIGIN||'')+'/buy/done',webhookUrl:webhookUrl()
+   reference,customer:{phone:input.phone},network:input.network,
+   returnUrl:(process.env.APP_ORIGIN||'')+'/buy/done',webhookUrl:webhookUrl(provider!.name)
   });
  }catch(error){
   // Release the hold immediately rather than leaving stock parked for 15 minutes.
@@ -63,7 +63,7 @@ export async function start(input:{package_id:string;phone?:string}){
   throw error;
  }
  await pool.query('update wifi.payment_intents set provider_reference=$2,checkout_url=$3,updated_at=now() where id=$1',[intent.id,checkout.reference,checkout.checkout_url]);
- return {reference,claim_token:claim,checkout_url:checkout.checkout_url,amount_tzs:intent.amount_tzs,expires_at:intent.expires_at};
+ return {reference,claim_token:claim,checkout_url:checkout.checkout_url,flow:checkout.flow,instruction:checkout.instruction,amount_tzs:intent.amount_tzs,expires_at:intent.expires_at};
 }
 
 /** Mark an unpaid intent failed and free its reservation. */
@@ -127,8 +127,18 @@ export async function webhook(rawBody:Buffer|string,headers:Record<string,string
  if(provider!.isPaid(event.status)){
   // Never trust the callback's amount over our own record.
   requireValue(event.amount===null||Math.round(event.amount)===intent.amount_tzs,400,'Amount does not match the purchase');
+  // A provider that does not sign its callbacks gets confirmed against the
+  // provider itself before a voucher moves. Anyone can POST this endpoint;
+  // only the provider can answer for the transaction.
+  if(provider!.confirmsOutOfBand){
+   const confirmed=await provider!.fetchStatus(intent.provider_reference||event.reference);
+   if(!confirmed?.paid){
+    await audit(pool,null,'PAYMENT_CALLBACK_UNCONFIRMED',intent.id,{reference:intent.reference,claimed:event.status,confirmed:confirmed?.status??'no answer'});
+    return {ok:true};
+   }
+  }
   await settle(intent.id);
- }else if(isFailure(event.status)&&intent.status==='PENDING'){
+ }else if(provider!.isFailure(event.status)&&intent.status==='PENDING'){
   await release(intent.id,event.failureReason||('Payment '+event.status));
  }
  return {ok:true};
@@ -149,7 +159,7 @@ export async function status(claimToken:string){
   // Release on a definitive provider failure rather than waiting out the hold:
   // a cancelled payment should return the voucher to stock immediately.
   if(live?.paid)current=await settle(current.id);
-  else if(live&&isFailure(live.status))current=await release(current.id,'Payment '+live.status)||current;
+  else if(live&&provider!.isFailure(live.status))current=await release(current.id,'Payment '+live.status)||current;
   else if(new Date(current.expires_at).getTime()<Date.now())current=await release(current.id,'Checkout expired')||current;
  }
  if(current.status!=='PAID')
