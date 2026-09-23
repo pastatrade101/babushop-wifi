@@ -3,7 +3,7 @@ import {generateKeyPairSync,createSign} from 'node:crypto';
 import {azamProvider,normalizePhone,snippeProvider,callbackShape} from '../packages/payments/src/index.ts';
 import {paymentProvider,webhookUrl} from '../packages/payments/src/index.ts';
 
-const KEYS=['PAYMENT_PROVIDER','AZAM_CALLBACK_PUBLIC_KEY','AZAM_ALLOW_UNSIGNED_CALLBACKS','AZAM_APP_NAME','AZAM_CLIENT_ID','AZAM_CLIENT_SECRET','AZAM_CALLBACK_TOKEN','SNIPPE_API_KEY','SNIPPE_WEBHOOK_SECRET','PUBLIC_API_URL','APP_ORIGIN'];
+const KEYS=['PAYMENT_PROVIDER','AZAM_CHECKOUT_URL','AZAM_SOURCE','AZAM_CALLBACK_PUBLIC_KEY','AZAM_ALLOW_UNSIGNED_CALLBACKS','AZAM_APP_NAME','AZAM_CLIENT_ID','AZAM_CLIENT_SECRET','AZAM_CALLBACK_TOKEN','SNIPPE_API_KEY','SNIPPE_WEBHOOK_SECRET','PUBLIC_API_URL','APP_ORIGIN'];
 const saved=Object.fromEntries(KEYS.map(k=>[k,process.env[k]]));
 afterEach(()=>{for(const k of KEYS){if(saved[k]===undefined)delete process.env[k];else process.env[k]=saved[k];}});
 const azamConfigured=()=>{process.env.AZAM_APP_NAME='JIACHIE';process.env.AZAM_CLIENT_ID='id';process.env.AZAM_CLIENT_SECRET='secret';process.env.AZAM_CALLBACK_TOKEN='tok';};
@@ -147,4 +147,50 @@ it('builds our own callback URL, with the secret in the path for AzamPay',()=>{
  process.env.AZAM_CALLBACK_TOKEN='abc123';
  expect(webhookUrl('azam')).toBe('https://jiachie-wifi.com/api/v1/portal/payments/webhook/azam/abc123');
  expect(webhookUrl('snippe')).toBe('https://jiachie-wifi.com/api/v1/portal/payments/webhook/snippe');
+});
+
+it('marks the transaction as ours, for the partner who disburses it',async()=>{
+ azamConfigured();
+ process.env.AZAM_SOURCE='Pastory';
+ let sent:any=null;
+ const realFetch=globalThis.fetch;
+ globalThis.fetch=(async(url:any,init:any)=>{
+  const body=JSON.parse(init.body);
+  if(String(url).includes('GenerateToken'))return new Response(JSON.stringify({data:{accessToken:'t'}}),{status:200});
+  sent={url:String(url),body};
+  return new Response(JSON.stringify({transactionId:'TX1'}),{status:200});
+ }) as any;
+ try{
+  const result=await azamProvider.createCheckout({amount:1000,currency:'TZS',description:'d',reference:'JW-1',
+   customer:{phone:'0712345678'},network:'vodacom',returnUrl:'https://x/y',webhookUrl:'https://x/w'});
+  expect(result).toMatchObject({provider:'azam',reference:'TX1',checkout_url:null,flow:'push'});
+  expect(sent.body.additionalProperties.source).toBe('Pastory');
+  expect(sent.body.additionalProperties.intent_reference).toBe('JW-1');
+  expect(sent.body).toMatchObject({accountNumber:'255712345678',amount:'1000',provider:'Mpesa',externalId:'JW-1'});
+  // Direct to AzamPay unless a partner gateway is configured.
+  expect(sent.url).toBe('https://checkout.azampay.co.tz/azampay/mno/checkout');
+  process.env.AZAM_CHECKOUT_URL='https://partner.example/api/azampay/request/payment';
+  await azamProvider.createCheckout({amount:1000,currency:'TZS',description:'d',reference:'JW-2',
+   customer:{phone:'0712345678'},network:'airtel',returnUrl:'https://x/y',webhookUrl:'https://x/w'});
+  expect(sent.url).toBe('https://partner.example/api/azampay/request/payment');
+  expect(sent.body.provider).toBe('Airtel');
+ }finally{globalThis.fetch=realFetch;}
+});
+
+it('will not send a payment request over plaintext or to a credentialed URL',async()=>{
+ azamConfigured();
+ for(const bad of ['http://partner.example/pay','https://user:pass@partner.example/pay','not a url']){
+  process.env.AZAM_CHECKOUT_URL=bad;
+  await expect(azamProvider.createCheckout({amount:1000,currency:'TZS',description:'d',reference:'JW-3',
+   customer:{phone:'0712345678'},network:'vodacom',returnUrl:'https://x/y',webhookUrl:'https://x/w'})).rejects.toThrow();
+ }
+});
+
+it('refuses a checkout it cannot address to a real network or number',async()=>{
+ azamConfigured();
+ delete process.env.AZAM_CHECKOUT_URL;
+ const base={amount:1000,currency:'TZS',description:'d',reference:'JW-4',returnUrl:'https://x/y',webhookUrl:'https://x/w'};
+ await expect(azamProvider.createCheckout({...base,customer:{phone:'0712345678'},network:'mtn'})).rejects.toThrow('network');
+ await expect(azamProvider.createCheckout({...base,customer:{},network:'vodacom'})).rejects.toThrow('number');
+ await expect(azamProvider.createCheckout({...base,customer:{phone:'0812345678'},network:'vodacom'})).rejects.toThrow();
 });

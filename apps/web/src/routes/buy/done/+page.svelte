@@ -8,7 +8,8 @@ let code=$state('');let packageName=$state('');let message=$state('');let copied
 let timer:ReturnType<typeof setTimeout>;let attempts=0;
 
 async function check(){
- let claim='';try{claim=sessionStorage.getItem('jw_claim')||'';}catch{/* blocked storage */}
+ // sessionStorage is still read so a purchase started before this change completes.
+ let claim='';try{claim=localStorage.getItem('jw_claim')||sessionStorage.getItem('jw_claim')||'';}catch{/* blocked storage */}
  if(!claim){phase='lost';return;}
  try{
   const response=await fetch('/buy/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({claim_token:claim})});
@@ -19,7 +20,7 @@ async function check(){
    code=result.code;phase='paid';
    // The code is issued once. Keeping the token would only let a shared device
    // show someone else's voucher.
-   try{sessionStorage.removeItem('jw_claim');}catch{/* ignore */}
+   try{localStorage.removeItem('jw_claim');sessionStorage.removeItem('jw_claim');}catch{/* ignore */}
    return;
   }
   if(result.status==='REFUND_DUE'){phase='refund';return;}

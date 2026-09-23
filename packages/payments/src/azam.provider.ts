@@ -25,6 +25,26 @@ const FAILED=['fail','failed','cancel','cancelled','canceled','expired','decline
 
 const authBase=()=>(process.env.AZAM_AUTH_URL||'https://authenticator.azampay.co.tz').replace(/\/+$/,'');
 const apiBase=()=>(process.env.AZAM_BASE_URL||'https://checkout.azampay.co.tz').replace(/\/+$/,'');
+/**
+ * Where the checkout request is posted. Defaults to AzamPay directly.
+ *
+ * It is configurable because this shop settles through a partner's AzamPay
+ * account rather than its own: the partner's gateway takes the request, and
+ * `AZAM_SOURCE` is the name they disburse against. Only an https host is
+ * accepted, so a misconfiguration cannot silently send a payment request --
+ * with our bearer token on it -- over plaintext.
+ */
+function checkoutUrl():string{
+ const configured=(process.env.AZAM_CHECKOUT_URL||'').trim();
+ if(!configured)return apiBase()+'/azampay/mno/checkout';
+ let url:URL;
+ try{url=new URL(configured);}catch{throw new Problem(503,'Mobile payment is not configured correctly.');}
+ if(url.protocol!=='https:'||url.username||url.password)throw new Problem(503,'Mobile payment is not configured correctly.');
+ return url.toString();
+}
+
+/** The name the settling partner disburses against. Never shown to the buyer. */
+const sourceName=()=>process.env.AZAM_SOURCE||'Pastory';
 
 /** AzamPay's own spelling for each network. The buyer never sees these. */
 const PROVIDERS:Record<string,string>={vodacom:'Mpesa',airtel:'Airtel',tigo:'Tigo',halopesa:'Halopesa',azampesa:'Azampesa'};
@@ -78,7 +98,7 @@ async function accessToken():Promise<string>{
 /** Test seam: a failed call must not leave a stale token behind. */
 export function resetToken(){cached=null;}
 
-interface CheckoutResponse {success?:boolean;transactionId?:string;message?:string;data?:{transactionId?:string}}
+interface CheckoutResponse {success?:boolean;transactionId?:string;reference?:string;message?:string;data?:{transactionId?:string}}
 type Callback=Record<string,unknown>;
 const first=(body:Callback,...names:string[]):string|null=>{
  for(const name of names){const value=body[name];if(typeof value==='string'&&value)return value;if(typeof value==='number')return String(value);}
@@ -102,20 +122,23 @@ export const azamProvider:PaymentProvider={
   const payload={
    accountNumber,amount:String(amount),currency:input.currency,
    externalId:input.reference,provider:network,
-   // Echoed back on the callback, and the dependable way home when the network
-   // rewrites externalId into one of its own reference fields.
-   additionalProperties:{source:'jiachie',intent_reference:input.reference},
+   // `source` is what the settling partner disburses against, so it has to be
+   // exactly the name they expect. `intent_reference` is echoed back on the
+   // callback and is the dependable way home when the network rewrites
+   // externalId into one of its own reference fields.
+   additionalProperties:{source:sourceName(),intent_reference:input.reference},
   };
   let response:Response,text='';
   try{
-   response=await fetch(apiBase()+'/azampay/mno/checkout',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(20000)});
+   response=await fetch(checkoutUrl(),{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(20000)});
    text=await response.text();
   }catch{throw new Problem(502,'Could not reach the payment service. Please try again or pay the attendant.');}
   // A rejected token is worth one retry with a fresh one; anything else is not.
   if(response.status===401){resetToken();throw new Problem(502,'The payment service rejected this request. Please try again or pay the attendant.');}
   let json:CheckoutResponse={};
   try{json=text?JSON.parse(text):{};}catch{/* non-JSON body */}
-  const reference=json.transactionId||json.data?.transactionId||null;
+  // A partner gateway in front of AzamPay may echo the id under its own name.
+  const reference=json.transactionId||json.data?.transactionId||json.reference||null;
   // Never echo the provider's own message: it can carry account detail.
   if(!response.ok||json.success===false||!reference)throw new Problem(502,'The payment service could not start this purchase. Please try again or pay the attendant.');
   return {provider:'azam',reference,checkout_url:null,flow:'push',

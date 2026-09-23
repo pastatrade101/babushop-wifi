@@ -8,15 +8,20 @@ const money=(n:number)=>new Intl.NumberFormat('en-TZ').format(n)+' TZS';
 // "1 week" where a local hours-only version said "168 hours".
 import {formatDuration} from '$lib/duration';
 const push=$derived(data.flow==='push');
-// Hand the claim token to the browser only, then move on. sessionStorage keeps
-// it out of the URL, out of history and out of any referrer.
+// Hand the claim token to the browser only, then move on. Storage keeps it out
+// of the URL, out of history and out of any referrer.
+//
+// localStorage, not sessionStorage: the payment completes on the server when
+// AzamPay calls back, whether or not this page is still open, so the token has
+// to survive the tab closing or the phone locking while the PIN prompt is up.
+// It is removed the moment the code has been shown.
 //
 // Two destinations, because the two payment shapes end differently: a hosted
 // page takes the buyer away, while a push leaves them here and asks their
 // network to prompt the handset, so we send them straight to the waiting screen.
 $effect(()=>{
  if(!form?.claim_token)return;
- try{sessionStorage.setItem('jw_claim',form.claim_token);}catch{/* private mode: the reference on screen is the fallback */}
+ try{localStorage.setItem('jw_claim',form.claim_token);}catch{/* private mode: the attendant can look the sale up by phone */}
  window.location.href=form.checkout_url||'/buy/done';
 });
 </script>
