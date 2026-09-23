@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
-import {pool,tx,audit,requireValue,SITE} from './index.ts';
+import {pool,tx,audit,requireValue,Problem,SITE} from './index.ts';
 import {digest,decrypt,present,token} from './crypto.ts';
-import {paymentProvider,webhookUrl} from '../../payments/src/index.ts';
+import {paymentProvider,webhookUrl,callbackShape} from '../../payments/src/index.ts';
 
 // Self-service voucher purchase by mobile money, alongside the cash counter.
 //
@@ -111,7 +111,13 @@ async function settle(intentId:string){
 export async function webhook(rawBody:Buffer|string,headers:Record<string,string|undefined>){
  const provider=paymentProvider();
  requireValue(provider,503,'Payments are not configured');
- requireValue(provider!.verifyWebhook(rawBody,headers),401,'Invalid signature');
+ if(!provider!.verifyWebhook(rawBody,headers)){
+  // A refused callback is otherwise a dead end: nothing is recorded, and the
+  // first live test tells you only that it failed. The field names alone say
+  // whether the provider signed it, and carry none of the buyer's data.
+  await audit(pool,null,'PAYMENT_CALLBACK_REJECTED',null,{provider:provider!.name,fields:callbackShape(rawBody)}).catch(()=>{});
+  throw new Problem(401,'Invalid signature');
+ }
  const event=provider!.parseEvent(JSON.parse(Buffer.isBuffer(rawBody)?rawBody.toString('utf8'):String(rawBody)));
  // Match on our own reference first -- Snippe quotes a transaction reference on
  // the event that matches neither the session reference it returned nor the one

@@ -1,4 +1,4 @@
-import {createHash,timingSafeEqual} from 'node:crypto';
+import {createHash,createVerify,timingSafeEqual} from 'node:crypto';
 import {Problem} from '../../database/src/index.ts';
 import type {CheckoutInput,CheckoutResult,NormalizedEvent,PaymentProvider,PaymentStatus,Network} from './provider.ts';
 
@@ -8,14 +8,17 @@ import type {CheckoutInput,CheckoutResult,NormalizedEvent,PaymentProvider,Paymen
 //
 // Two things about this provider shape the code below.
 //
-// It does not sign its callbacks. There is no HMAC to check, so the callback URL
-// carries an unguessable secret path segment and the same secret is accepted as a
-// bearer token; `confirmsOutOfBand` is true so a voucher is never released on the
-// say-so of an unauthenticated POST alone.
+// Callbacks are signed, but not the way most gateways sign them: there is no
+// HMAC over the raw body. AzamPay signs the concatenation of four named fields
+// with its own RSA key, so verification reconstructs that string and checks a
+// PKCS#1 v1.5 signature against the checkout public key. The callback URL also
+// carries an unguessable secret as its last path segment, which is checked
+// first -- two independent factors, and the signature is the one that matters.
 //
-// Its callback field names vary by network and by API version -- the same value
-// arrives as `utilityref`, `externalId` or `externalReference` depending on who
-// is sending it. Every known alias is read rather than assuming one shape.
+// There is no status endpoint for collections. GetTransactionStatus is for
+// disbursements only, so `fetchStatus` cannot confirm an MNO checkout and does
+// not pretend to: webhooks are the only channel, which is exactly why they have
+// to be verified properly rather than trusted.
 
 const PAID=['success','successful','completed','paid'];
 const FAILED=['fail','failed','cancel','cancelled','canceled','expired','declined','reversed','insufficient','timeout'];
@@ -43,6 +46,12 @@ export function normalizePhone(value:string):string{
  const local=digits.startsWith('255')?digits.slice(3):digits.startsWith('0')?digits.slice(1):digits;
  if(!/^[67]\d{8}$/.test(local))throw new Problem(400,'Enter a valid Tanzanian mobile number, for example 0712 345 678.');
  return '255'+local;
+}
+
+/** PEM for the checkout callback key. Accepts a literal newline or an escaped one. */
+function publicKey():string{
+ const raw=(process.env.AZAM_CALLBACK_PUBLIC_KEY||'').trim();
+ return raw?raw.replace(/\\n/g,'\n'):'';
 }
 
 let cached:{token:string;expires:number}|null=null;
@@ -80,7 +89,7 @@ export const azamProvider:PaymentProvider={
  name:'azam',
  flow:'push',
  networks:AZAM_NETWORKS,
- confirmsOutOfBand:true,
+ confirmsOutOfBand:false,   // no collection status endpoint exists; the signature is the check
 
  async createCheckout(input:CheckoutInput):Promise<CheckoutResult>{
   const amount=Math.round(input.amount);
@@ -114,19 +123,33 @@ export const azamProvider:PaymentProvider={
  },
 
  /**
-  * AzamPay does not sign callbacks, so this is a shared-secret check, not a
-  * signature check. The secret arrives either as the last path segment of the
-  * callback URL or as a bearer token, and is compared in constant time.
-  * `confirmsOutOfBand` is what actually protects the voucher.
+  * Two factors. The URL secret proves the caller knew something only AzamPay was
+  * given; the RSA signature proves AzamPay sent it.
+  *
+  * Fails closed: with no public key configured, a callback is refused unless
+  * unsigned callbacks have been explicitly allowed. There is no status endpoint
+  * to fall back on for collections, so an unverified callback is the only thing
+  * standing between a stranger and a free voucher.
   */
- verifyWebhook(_rawBody,headers){
+ verifyWebhook(rawBody,headers){
   const secret=process.env.AZAM_CALLBACK_TOKEN||'';
   if(!secret)return false;
   const presented=headers['x-callback-token']||headers.authorization?.replace(/^Bearer\s+/i,'')||'';
   if(!presented)return false;
   // Hash both sides so the comparison is over equal lengths whatever is sent.
   const a=createHash('sha256').update(presented).digest(),b=createHash('sha256').update(secret).digest();
-  return timingSafeEqual(a,b);
+  if(!timingSafeEqual(a,b))return false;
+
+  const pem=publicKey();
+  if(!pem)return process.env.AZAM_ALLOW_UNSIGNED_CALLBACKS==='true';
+  let body:Callback;
+  try{body=JSON.parse(Buffer.isBuffer(rawBody)?rawBody.toString('utf8'):String(rawBody));}catch{return false;}
+  const signature=typeof body.signature==='string'?body.signature:'';
+  if(!signature)return false;
+  // AzamPay signs these four fields concatenated, in this order -- not the body.
+  const signed=['utilityref','externalreference','transactionstatus','operator'].map(name=>String(body[name]??'')).join('');
+  try{return createVerify('RSA-SHA256').update(signed).end().verify(pem,signature,'base64');}
+  catch{return false;}
  },
 
  parseEvent(body:unknown):NormalizedEvent{
@@ -151,26 +174,27 @@ export const azamProvider:PaymentProvider={
  isFailure(status:string){return isAzamFailure(status);},
 
  /**
-  * Confirmation, and the only thing a voucher is released on. Returns null on
-  * any doubt, which callers must treat as "not paid" rather than "not known".
+  * Not available for collections.
+  *
+  * AzamPay's transaction-status endpoint answers for disbursements, not for MNO
+  * checkout, so there is nothing honest to return here. Null means "not known",
+  * and callers already treat that as "not paid" -- a buyer whose callback never
+  * arrives has their hold expire and their stock returned, rather than being
+  * told a payment succeeded on no evidence.
   */
- async fetchStatus(reference:string):Promise<PaymentStatus|null>{
-  if(!reference)return null;
-  const bank=process.env.AZAM_STATUS_BANK||'';
-  if(!bank)return null;            // unconfigured: never guess a payment is good
-  try{
-   const token=await accessToken();
-   const url=new URL(apiBase()+'/azampay/gateway/transaction-status');
-   url.searchParams.set('pgReferenceId',reference);
-   url.searchParams.set('bankName',bank);
-   const response=await fetch(url,{headers:{Authorization:'Bearer '+token,accept:'application/json'},signal:AbortSignal.timeout(12000)});
-   if(!response.ok)return null;
-   const json=await response.json() as {data?:{transactionStatus?:string};transactionStatus?:string;status?:string};
-   const status=(json.data?.transactionStatus||json.transactionStatus||json.status||'').toLowerCase();
-   if(!status)return null;
-   return {reference,status,paid:azamProvider.isPaid(status)};
-  }catch{return null;}
- }
+ async fetchStatus():Promise<PaymentStatus|null>{return null;}
 };
+
+/**
+ * The field names a rejected callback carried -- names only, never values.
+ * Enough to see whether the provider signed it, without recording anyone's
+ * phone number or reference.
+ */
+export function callbackShape(rawBody:Buffer|string):string[]{
+ try{
+  const body=JSON.parse(Buffer.isBuffer(rawBody)?rawBody.toString('utf8'):String(rawBody));
+  return body&&typeof body==='object'?Object.keys(body).sort():[];
+ }catch{return [];}
+}
 
 export const isAzamFailure=(status:string)=>{const s=status.toLowerCase();return FAILED.some(word=>s.includes(word));};

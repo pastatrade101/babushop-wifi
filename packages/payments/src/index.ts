@@ -4,7 +4,7 @@ import type {PaymentProvider} from './provider.ts';
 
 export type {CheckoutInput,CheckoutResult,NormalizedEvent,PaymentStatus,PaymentProvider,Flow,Network} from './provider.ts';
 export {snippeProvider} from './snippe.provider.ts';
-export {azamProvider,normalizePhone,AZAM_NETWORKS} from './azam.provider.ts';
+export {azamProvider,normalizePhone,AZAM_NETWORKS,callbackShape} from './azam.provider.ts';
 
 const configured:Record<string,()=>boolean>={
  azam:()=>!!(process.env.AZAM_CLIENT_ID&&process.env.AZAM_CLIENT_SECRET&&process.env.AZAM_APP_NAME&&process.env.AZAM_CALLBACK_TOKEN),

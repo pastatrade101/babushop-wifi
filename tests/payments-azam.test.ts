@@ -1,8 +1,9 @@
 import {it,expect,afterEach} from 'vitest';
-import {azamProvider,normalizePhone,snippeProvider} from '../packages/payments/src/index.ts';
+import {generateKeyPairSync,createSign} from 'node:crypto';
+import {azamProvider,normalizePhone,snippeProvider,callbackShape} from '../packages/payments/src/index.ts';
 import {paymentProvider,webhookUrl} from '../packages/payments/src/index.ts';
 
-const KEYS=['PAYMENT_PROVIDER','AZAM_APP_NAME','AZAM_CLIENT_ID','AZAM_CLIENT_SECRET','AZAM_CALLBACK_TOKEN','AZAM_STATUS_BANK','SNIPPE_API_KEY','SNIPPE_WEBHOOK_SECRET','PUBLIC_API_URL','APP_ORIGIN'];
+const KEYS=['PAYMENT_PROVIDER','AZAM_CALLBACK_PUBLIC_KEY','AZAM_ALLOW_UNSIGNED_CALLBACKS','AZAM_APP_NAME','AZAM_CLIENT_ID','AZAM_CLIENT_SECRET','AZAM_CALLBACK_TOKEN','SNIPPE_API_KEY','SNIPPE_WEBHOOK_SECRET','PUBLIC_API_URL','APP_ORIGIN'];
 const saved=Object.fromEntries(KEYS.map(k=>[k,process.env[k]]));
 afterEach(()=>{for(const k of KEYS){if(saved[k]===undefined)delete process.env[k];else process.env[k]=saved[k];}});
 const azamConfigured=()=>{process.env.AZAM_APP_NAME='JIACHIE';process.env.AZAM_CLIENT_ID='id';process.env.AZAM_CLIENT_SECRET='secret';process.env.AZAM_CALLBACK_TOKEN='tok';};
@@ -44,27 +45,70 @@ it('does not read a failure as a payment',()=>{
  expect(azamProvider.isPaid('success but failed')).toBe(false);
 });
 
-it('rejects a callback that does not carry the shared secret',()=>{
+// AzamPay signs utilityref + externalreference + transactionstatus + operator,
+// concatenated in that order, with RSA PKCS#1 v1.5 over SHA-256, base64.
+const keys=generateKeyPairSync('rsa',{modulusLength:2048,publicKeyEncoding:{type:'spki',format:'pem'},privateKeyEncoding:{type:'pkcs8',format:'pem'}});
+const signed=(body:Record<string,unknown>,key=keys.privateKey)=>{
+ const message=['utilityref','externalreference','transactionstatus','operator'].map(n=>String(body[n]??'')).join('');
+ return JSON.stringify({...body,signature:createSign('RSA-SHA256').update(message).end().sign(key,'base64')});
+};
+const CALLBACK={utilityref:'JW-ABC',externalreference:'EXT1',transactionstatus:'success',operator:'Mpesa',amount:'1000'};
+
+it('needs both the URL secret and a real signature',()=>{
  process.env.AZAM_CALLBACK_TOKEN='s3cret';
- expect(azamProvider.verifyWebhook('{}',{'x-callback-token':'s3cret'})).toBe(true);
- expect(azamProvider.verifyWebhook('{}',{authorization:'Bearer s3cret'})).toBe(true);
- expect(azamProvider.verifyWebhook('{}',{'x-callback-token':'wrong'})).toBe(false);
- expect(azamProvider.verifyWebhook('{}',{'x-callback-token':'s3cretX'})).toBe(false);
- expect(azamProvider.verifyWebhook('{}',{})).toBe(false);
+ process.env.AZAM_CALLBACK_PUBLIC_KEY=keys.publicKey;
+ const body=signed(CALLBACK);
+ expect(azamProvider.verifyWebhook(body,{'x-callback-token':'s3cret'})).toBe(true);
+ expect(azamProvider.verifyWebhook(body,{authorization:'Bearer s3cret'})).toBe(true);
+ // Right signature, wrong secret.
+ expect(azamProvider.verifyWebhook(body,{'x-callback-token':'wrong'})).toBe(false);
+ expect(azamProvider.verifyWebhook(body,{})).toBe(false);
+ // Right secret, no signature: this is the forgery the secret alone cannot stop.
+ expect(azamProvider.verifyWebhook(JSON.stringify(CALLBACK),{'x-callback-token':'s3cret'})).toBe(false);
+ // Right secret, signature from somebody else's key.
+ const other=generateKeyPairSync('rsa',{modulusLength:2048,publicKeyEncoding:{type:'spki',format:'pem'},privateKeyEncoding:{type:'pkcs8',format:'pem'}});
+ expect(azamProvider.verifyWebhook(signed(CALLBACK,other.privateKey),{'x-callback-token':'s3cret'})).toBe(false);
+ // A signature that covers a different amount than the body now claims.
+ expect(azamProvider.verifyWebhook(signed({...CALLBACK,transactionstatus:'failed'}).replace('"failed"','"success"'),{'x-callback-token':'s3cret'})).toBe(false);
+ // Not JSON at all.
+ expect(azamProvider.verifyWebhook('not json',{'x-callback-token':'s3cret'})).toBe(false);
  // No secret configured is a closed door, not an open one.
  delete process.env.AZAM_CALLBACK_TOKEN;
- expect(azamProvider.verifyWebhook('{}',{'x-callback-token':'anything'})).toBe(false);
+ expect(azamProvider.verifyWebhook(body,{'x-callback-token':'anything'})).toBe(false);
 });
 
-it('will not confirm a payment it cannot ask about',async()=>{
+it('fails closed when no public key is configured',()=>{
+ process.env.AZAM_CALLBACK_TOKEN='s3cret';
+ delete process.env.AZAM_CALLBACK_PUBLIC_KEY;
+ const body=signed(CALLBACK);
+ // Refused by default: an unverifiable callback is the only thing between a
+ // stranger and a free voucher, and there is no status endpoint to fall back on.
+ expect(azamProvider.verifyWebhook(body,{'x-callback-token':'s3cret'})).toBe(false);
+ // Downgrading has to be deliberate and explicit.
+ process.env.AZAM_ALLOW_UNSIGNED_CALLBACKS='true';
+ expect(azamProvider.verifyWebhook(body,{'x-callback-token':'s3cret'})).toBe(true);
+ expect(azamProvider.verifyWebhook(body,{'x-callback-token':'wrong'})).toBe(false);
+});
+
+it('escapes a PEM written on one line, as an env file forces',()=>{
+ process.env.AZAM_CALLBACK_TOKEN='s3cret';
+ process.env.AZAM_CALLBACK_PUBLIC_KEY=keys.publicKey.replace(/\n/g,'\\n');
+ expect(azamProvider.verifyWebhook(signed(CALLBACK),{'x-callback-token':'s3cret'})).toBe(true);
+});
+
+it('cannot ask AzamPay about a collection, and does not pretend to',async()=>{
  azamConfigured();
- delete process.env.AZAM_STATUS_BANK;
- // Unconfigured status lookup returns null, and purchases.ts treats null as
- // "not paid" -- an unsigned callback alone can never release a voucher.
+ // GetTransactionStatus answers for disbursements, not MNO checkout. Null means
+ // "not known", which purchases.ts already treats as "not paid".
  expect(await azamProvider.fetchStatus('T1')).toBeNull();
- expect(await azamProvider.fetchStatus('')).toBeNull();
- expect(azamProvider.confirmsOutOfBand).toBe(true);
+ expect(azamProvider.confirmsOutOfBand).toBe(false);
  expect(snippeProvider.confirmsOutOfBand).toBe(false);
+});
+
+it('records the shape of a refused callback without its contents',()=>{
+ expect(callbackShape(JSON.stringify(CALLBACK))).toEqual(['amount','externalreference','operator','transactionstatus','utilityref']);
+ expect(callbackShape(JSON.stringify(CALLBACK)).join()).not.toContain('JW-ABC');
+ expect(callbackShape('not json')).toEqual([]);
 });
 
 it('declares the flow the buy page has to render',()=>{
