@@ -37,3 +37,23 @@ export const List=T.Object({items:T.Array(Row),page:T.Integer(),has_more:T.Boole
 export const OK=T.Object({ok:T.Boolean(),message:T.Optional(T.String())},{additionalProperties:false});
 export const ErrorResponse=T.Object({error:T.String()},{additionalProperties:false});
 export const SecretRows=T.Object({items:T.Array(Row)},{additionalProperties:false});
+
+// ── Remote site access ────────────────────────────────────────────────────────
+// These responses carry no secret by construction: the network schema stores no
+// credential, and the router connector strips private keys and shared secrets at
+// the read boundary. So the deeply nested diagnostic and plan documents are
+// passed through whole rather than flattened into the Row allowlist, which exists
+// to stop voucher and payment columns leaking.
+const Nested=T.Any();
+export const NetworkSiteRow=T.Object({id:Id,site_id:Id,name:T.String(),router_identity:T.Union([T.String(),T.Null()]),router_os:T.Union([T.String(),T.Null()]),lan_cidrs:T.Array(T.String()),management_cidr:T.Union([T.String(),T.Null()]),site_interface:T.String(),server_tunnel_address:T.Union([T.String(),T.Null()]),omada_inform_url:T.Union([T.String(),T.Null()]),last_discovered_at:T.Union([T.String(),T.Null()]),created_at:T.String(),updated_at:T.String(),device_count:T.Optional(T.Integer()),approved_count:T.Optional(T.Integer()),tunnel:T.Optional(Nested)},{additionalProperties:false});
+export const NetworkSiteList=T.Object({items:T.Array(NetworkSiteRow)},{additionalProperties:false});
+export const NetworkDeviceRow=T.Object({id:Id,network_site_id:Id,type:T.String(),vendor:T.Union([T.String(),T.Null()]),model:T.Union([T.String(),T.Null()]),mac_address:T.String(),ip_address:T.Union([T.String(),T.Null()]),hostname:T.Union([T.String(),T.Null()]),interface:T.Union([T.String(),T.Null()]),dhcp_status:T.Union([T.String(),T.Null()]),source:T.String(),approved_for_management:T.Boolean(),status:T.String(),last_seen_at:T.Union([T.String(),T.Null()]),created_at:T.String(),updated_at:T.String()},{additionalProperties:false});
+export const NetworkDeviceList=T.Object({items:T.Array(NetworkDeviceRow)},{additionalProperties:false});
+export const NetworkStatus=Nested;
+export const NetworkDiscovery=T.Object({discovered:T.Integer(),lan_cidrs:T.Array(T.String()),items:T.Array(NetworkDeviceRow)},{additionalProperties:false});
+export const NetworkReachability=Nested;
+export const NetworkPlanRow=T.Object({id:Id,network_site_id:Id,created_by:Id,digest:T.String(),plan:Nested,status:T.String(),applied_at:T.Union([T.String(),T.Null()]),created_at:T.String()},{additionalProperties:false});
+export const NetworkPlanList=T.Object({items:T.Array(NetworkPlanRow)},{additionalProperties:false});
+export const NetworkAuditList=T.Object({items:T.Array(T.Object({id:Id,actor:T.Union([T.String(),T.Null()]),actor_id:T.Union([Id,T.Null()]),action:T.String(),entity_id:T.Union([Id,T.Null()]),details:Nested,created_at:T.String()},{additionalProperties:false}))},{additionalProperties:false});
+export const ApprovalInput=T.Object({approved:T.Boolean()},{additionalProperties:false});
+export const OmadaUrlInput=T.Object({url:T.Union([T.String({maxLength:300}),T.Null()])},{additionalProperties:false});
