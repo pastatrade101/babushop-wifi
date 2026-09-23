@@ -1,4 +1,4 @@
-import {createHash} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import {type Row,type Snapshot} from './discovery.ts';
 import {analyzeInputPath,type InputPathAnalysis} from './diagnostics.ts';
 import {parseCidr,overlaps,contains,selectManagementCidr,formatAddress,networkOf} from './cidr.ts';
@@ -7,34 +7,67 @@ import {parseCidr,overlaps,contains,selectManagementCidr,formatAddress,networkOf
 //
 // The routed design was rejected on review and this is the replacement. Putting
 // the admin subnet into the router's existing peer would have meant editing an
-// object this module does not own — which cannot be rolled back by deleting
-// marked objects — and would still have needed a return route on the router.
+// object this module does not own -- which cannot be rolled back by deleting
+// marked objects -- and would still have needed a return route on the router.
 //
 // Instead the VPS source-NATs admin traffic to its own tunnel address. The
 // router then sees management traffic identical to the portal's, from an address
 // its existing peer already permits and its existing routes already carry. So the
 // router needs no peer change, no route and no customer-path change: only
 // narrowly scoped additive accepts.
+//
+// Two things this planner will not do. It will not claim a host fact it has not
+// been given: the API runs in its own network namespace and cannot see the host's
+// routing table, forwarding flag or WireGuard state, so those arrive as input and
+// are marked UNVERIFIED when absent. And it will not emit a rollback that could
+// reach another provisioning run: every object carries a provision id, and
+// rollback matches the whole marker, not the site.
 
 export const OWNER='portal-remote-access';
 
 export type Target='MIKROTIK'|'VPS';
 export type Kind='CREATE'|'MODIFY'|'DELETE';
+export type PreflightStatus='PASS'|'ACTION_REQUIRED'|'UNVERIFIED';
+
+export type PreflightCheck={
+ id:string;description:string;command:string;
+ expected:string;observed:string|null;status:PreflightStatus;note:string;
+};
 
 export type PlanAction={
  id:string;target:Target;kind:Kind;summary:string;why:string;
  rest:{method:'PUT'|'POST'|'PATCH'|'DELETE';path:string;body?:Record<string,string>}|null;
- command:string;rollback:string;
- /** Set only when an existing object is edited or displaced. Null is the safe case. */
+ /** Applied to the running system. Lost on restart unless `persistent` is also applied. */
+ command:string;
+ /** Written to disk so the change survives an interface or server restart. */
+ persistent:string|null;
+ rollback:string;
  affectsExisting:string|null;
 };
 
 export type ExistingObject={id:string;chain:string;action:string;comment:string;effect:string};
 
+export type VpsFacts={
+ siteInterface:string;tunnelAddress:string;
+ adminInterface?:string;adminListenPort?:number;peerPublicKey?:string;
+ /**
+  * Host facts, gathered on the VPS itself. The API container has its own network
+  * namespace: its /proc/sys/net values, routes and interfaces are not the host's,
+  * so reading them there would be wrong rather than merely incomplete.
+  */
+ preflight?:{
+  capturedAt?:string;ipForward?:string;
+  wgManager?:'wg-quick'|'systemd-networkd'|'manual'|'unknown';
+  wgUnit?:string;wgUnitEnabled?:boolean;wgUnitActive?:boolean;wgConfigPath?:string;
+  runtimeAllowedIps?:string;persistentAllowedIps?:string;
+  routeToTarget?:string;adminPortFree?:boolean;
+ };
+};
+
 export type Plan={
- version:1;architecture:'VPS_SNAT';generatedAt:string;siteId:string;digest:string;
- managementCidr:string;adminInterface:string;siteInterface:string;serverTunnelAddress:string;
- approvedTargets:string[];
+ version:2;architecture:'VPS_SNAT';generatedAt:string;siteId:string;provisionId:string;digest:string;marker:string;
+ managementCidr:string;adminInterface:string;siteInterface:string;serverTunnelAddress:string;approvedTargets:string[];
+ preflight:PreflightCheck[];
  creates:PlanAction[];changes:PlanAction[];deletes:PlanAction[];existingObjectsAffected:ExistingObject[];
  beforeState:Record<string,unknown>;expectedAfterState:Record<string,unknown>;
  healthChecks:{id:string;description:string;how:string}[];
@@ -43,14 +76,12 @@ export type Plan={
 
 export type PlanInput={
  siteId:string;snapshot:Snapshot;
- /** The device the plan opens a path to. Nothing else becomes reachable. */
  managementTargets:{address:string;label:string}[];
- /** The interface the targets sit behind, from discovery — never assumed. */
  targetInterface:string;
- vps:{siteInterface:string;tunnelAddress:string;adminInterface?:string;adminListenPort?:number;peerPublicKey?:string;currentAllowedIps?:string};
+ vps:VpsFacts;
+ /** Supplied only by tests, so a plan's digest can be compared. */
+ provisionId?:string;
 };
-
-const marker=(siteId:string)=>`managed-by=${OWNER} site=${siteId}`;
 
 /** Router paths that would touch a paying customer. The plan is refused if it names one. */
 const CUSTOMER_PATHS=['ip/hotspot','ip/dhcp-server','ip/dns','interface/bridge','interface/vlan','queue','ip/firewall/nat','ip/route','interface/wireguard','system/'];
@@ -69,18 +100,21 @@ function forwardDropFromInterface(rules:Row[],iface:string,replyTo:string,lists:
 
 export function buildPlan(input:PlanInput):Plan{
  const {siteId,snapshot:snap,vps}=input;
+ const facts=vps.preflight??{};
  const rules=snap.firewallFilter,lists=snap.addressLists;
- const comment=marker(siteId);
+ const provisionId=input.provisionId??randomUUID();
+ // Unique per provisioning run, not per site: rolling back one failed apply must
+ // never be able to reach a rule a different, successful apply created here.
+ const marker=`managed-by=${OWNER} site=${siteId} provision=${provisionId}`;
  const adminInterface=vps.adminInterface??'wg-admin';
+ const adminPort=vps.adminListenPort??51821;
  const blockers:string[]=[],warnings:string[]=[];
  const creates:PlanAction[]=[],changes:PlanAction[]=[],existing:ExistingObject[]=[];
 
- // A management subnet is chosen against everything the router actually carries,
- // so it cannot collide with a customer LAN, the WAN or the existing tunnel.
  const taken=[...snap.addresses.filter(a=>a.disabled!=='true'&&a.address?.includes('/')).map(a=>a.address),...snap.routes.filter(r=>r.active==='true'&&r['dst-address']&&r['dst-address']!=='0.0.0.0/0').map(r=>r['dst-address'])];
  let managementCidr='';
  try{managementCidr=selectManagementCidr([...new Set(taken)]);}
- catch(error){blockers.push((error as Error).message);managementCidr='';}
+ catch(error){blockers.push((error as Error).message);}
  const collisions=taken.filter(cidr=>{try{return managementCidr&&overlaps(parseCidr(managementCidr),parseCidr(cidr));}catch{return false;}});
  if(collisions.length)blockers.push(`Chosen management subnet ${managementCidr} overlaps ${collisions.join(', ')}.`);
  const adminAddress=managementCidr?`${formatAddress(networkOf(parseCidr(managementCidr))+1)}/${managementCidr.split('/')[1]}`:'';
@@ -88,47 +122,127 @@ export function buildPlan(input:PlanInput):Plan{
  const targets=input.managementTargets;
  const approvedTargets=targets.map(t=>t.address);
  if(!targets.length)blockers.push('No approved management target. Approve a discovered device before planning.');
+ const primary=approvedTargets[0]??'<target>';
 
- // ── VPS: the admin interface, and the SNAT that makes the router see us as the portal ──
+ // ── preflight ─────────────────────────────────────────────────────────────
+ const check=(id:string,description:string,command:string,expected:string,observed:string|null|undefined,pass:(value:string)=>boolean,note:string,unverified:string):PreflightCheck=>{
+  if(observed===undefined||observed===null)return {id,description,command,expected,observed:null,status:'UNVERIFIED',note:unverified};
+  return {id,description,command,expected,observed,status:pass(observed)?'PASS':'ACTION_REQUIRED',note};
+ };
+ const preflight:PreflightCheck[]=[
+  check('ip-forward','IPv4 forwarding is enabled on the host','cat /proc/sys/net/ipv4/ip_forward','1',facts.ipForward,v=>v.trim()==='1',
+   facts.ipForward?.trim()==='1'?'Already enabled — Docker requires it. This plan leaves it alone.':'Disabled. The plan below enables it, runtime and persistently.',
+   'Not captured. Run this on the VPS host, not in a container: a container has its own network namespace and its value is not the host’s.'),
+  check('wg-persistence',`How ${vps.siteInterface} is persistently managed`,`systemctl is-enabled wg-quick@${vps.siteInterface}; systemctl is-active wg-quick@${vps.siteInterface}`,'enabled/active under wg-quick',
+   facts.wgManager?`${facts.wgManager}${facts.wgUnit?` (${facts.wgUnit}, enabled=${facts.wgUnitEnabled}, active=${facts.wgUnitActive})`:''}`:undefined,
+   ()=>facts.wgManager==='wg-quick',
+   facts.wgManager==='wg-quick'?`Persistent state lives in ${facts.wgConfigPath??`/etc/wireguard/${vps.siteInterface}.conf`}. A runtime-only change would vanish on restart.`:'Not wg-quick. Find where the peer is defined before changing it, or the change will not survive a restart.',
+   'Not captured. Until this is known, no AllowedIPs change should be applied: a runtime-only edit disappears silently on the next restart.'),
+  check('runtime-allowed-ips',`Current runtime AllowedIPs for the ${vps.siteInterface} peer`,`wg show ${vps.siteInterface} allowed-ips`,'the value to restore on rollback',facts.runtimeAllowedIps,()=>true,
+   'Captured. This is the rollback value for the runtime change.',
+   'Not captured, and this is required: it is the only rollback value for the runtime AllowedIPs change. Needs root.'),
+  check('persistent-allowed-ips',`Current AllowedIPs in ${facts.wgConfigPath??`/etc/wireguard/${vps.siteInterface}.conf`}`,`grep -n AllowedIPs ${facts.wgConfigPath??`/etc/wireguard/${vps.siteInterface}.conf`}`,'the value to restore on rollback',facts.persistentAllowedIps,()=>true,
+   'Captured. This is the rollback value for the persistent change.',
+   'Not captured, and this is required: it is the rollback value for the on-disk change. Needs root (/etc/wireguard is mode 700).'),
+  check('target-route',`Where the host currently sends traffic for ${primary}`,`ip route get ${primary}`,`via ${vps.siteInterface}`,facts.routeToTarget,v=>v.includes(vps.siteInterface),
+   facts.routeToTarget?.includes(vps.siteInterface)?'Already routed over the tunnel.':`Currently leaves over the default route. This is why TCP probes are refused rather than sent, and why the explicit route below is needed: "wg set" changes AllowedIPs but adds no Linux route.`,
+   'Not captured. Run "ip route get" on the host.'),
+  check('admin-port',`UDP ${adminPort} is free for ${adminInterface}`,`ss -lun sport = :${adminPort}`,'no listener',facts.adminPortFree===undefined?undefined:String(facts.adminPortFree),v=>v==='true',
+   facts.adminPortFree?'Free.':`Something is already listening on UDP ${adminPort}. Choose another port.`,
+   'Not captured.'),
+ ];
+ for(const item of preflight){
+  if(item.status==='UNVERIFIED'&&['wg-persistence','runtime-allowed-ips','persistent-allowed-ips'].includes(item.id))
+   blockers.push(`Preflight "${item.id}" is unverified. ${item.note}`);
+ }
+
+ // ── VPS ───────────────────────────────────────────────────────────────────
  const snatRules=targets.map(t=>`iptables -t nat -A POSTROUTING -s ${managementCidr} -d ${t.address}/32 -o ${vps.siteInterface} -j SNAT --to-source ${vps.tunnelAddress}`);
  const forwardRules=targets.flatMap(t=>[
   `iptables -A FORWARD -i ${adminInterface} -o ${vps.siteInterface} -d ${t.address}/32 -j ACCEPT`,
   `iptables -A FORWARD -i ${vps.siteInterface} -o ${adminInterface} -s ${t.address}/32 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT`,
  ]);
+ const undo=(rule:string)=>rule.replace(' -A ',' -D ');
+
  creates.push({
   id:'vps-admin-interface',target:'VPS',kind:'CREATE',
-  summary:`Create ${adminInterface} at ${adminAddress} on UDP ${vps.adminListenPort??51821}`,
-  why:'Admin peers need their own subnet. The site tunnel is a /30 with no room for a third address.',
+  summary:`Create ${adminInterface} at ${adminAddress} on UDP ${adminPort}`,
+  why:`Admin peers need their own subnet. ${vps.siteInterface} is a /30 with no room for a third address.`,
   rest:null,
-  command:[`# /etc/wireguard/${adminInterface}.conf`,'[Interface]',`Address = ${adminAddress}`,`ListenPort = ${vps.adminListenPort??51821}`,'PrivateKey = <generated at apply time, never logged>',
-   ...snatRules.map(rule=>`PostUp = ${rule}`),...forwardRules.map(rule=>`PostUp = ${rule}`),
-   ...snatRules.map(rule=>`PostDown = ${rule.replace(' -A ',' -D ')}`),...forwardRules.map(rule=>`PostDown = ${rule.replace(' -A ',' -D ')}`),
-   '','# then:',`systemctl enable --now wg-quick@${adminInterface}`].join('\n'),
+  command:`wg-quick up ${adminInterface}`,
+  persistent:[`# /etc/wireguard/${adminInterface}.conf`,'[Interface]',`Address = ${adminAddress}`,`ListenPort = ${adminPort}`,'PrivateKey = <generated at apply time, never logged>','','# peers are added per administrator in Phase 6','',`systemctl enable --now wg-quick@${adminInterface}`].join('\n'),
   rollback:`systemctl disable --now wg-quick@${adminInterface} && rm -f /etc/wireguard/${adminInterface}.conf`,
   affectsExisting:null,
  });
- warnings.push(`The SNAT and forward rules live in ${adminInterface}'s PostUp/PostDown, so bringing the interface down removes them. They match only source ${managementCidr} to ${approvedTargets.join(', ')} leaving ${vps.siteInterface}: portal traffic from the containers and customer traffic never match them.`);
 
- // The one genuine edit in the whole plan, and it is on our own host.
+ // The correction that matters most: AllowedIPs is WireGuard's crypto-routing
+ // table, not the kernel's. wg-quick derives routes from it at "up" time; "wg
+ // set" on a live interface does not, so without this the packet follows the
+ // default route and leaves over the WAN.
+ creates.push({
+  id:'vps-route-to-target',target:'VPS',kind:'CREATE',
+  summary:`Route ${approvedTargets.map(a=>a+'/32').join(', ')} via ${vps.siteInterface}`,
+  why:`"wg set ... allowed-ips" changes which peer WireGuard will accept and encrypt for, but adds no Linux route. Observed today: ${facts.routeToTarget??'not captured'} — so the packet would go out the WAN instead of the tunnel.`,
+  rest:null,
+  command:targets.map(t=>`ip route add ${t.address}/32 dev ${vps.siteInterface}`).join('\n'),
+  persistent:`Covered by the AllowedIPs entry in ${facts.wgConfigPath??`/etc/wireguard/${vps.siteInterface}.conf`}: wg-quick installs a route for each AllowedIP when it brings the interface up. The explicit "ip route add" is only needed because the interface is already running and must not be restarted.`,
+  rollback:targets.map(t=>`ip route del ${t.address}/32 dev ${vps.siteInterface}`).join('\n'),
+  affectsExisting:null,
+ });
+
+ creates.push({
+  id:'vps-management-snat',target:'VPS',kind:'CREATE',
+  summary:`SNAT ${managementCidr} → ${vps.tunnelAddress}, only towards ${approvedTargets.join(', ')}`,
+  why:'Makes management traffic reach the router as the portal address its existing peer already permits, so the router needs no peer or route change of its own.',
+  rest:null,command:snatRules.join('\n'),
+  persistent:`Written as PostUp/PostDown in /etc/wireguard/${adminInterface}.conf so the rules live and die with the interface:\n`+snatRules.map(r=>`PostUp = ${r}`).join('\n')+'\n'+snatRules.map(r=>`PostDown = ${undo(r)}`).join('\n'),
+  rollback:snatRules.map(undo).join('\n'),
+  affectsExisting:null,
+ });
+
+ creates.push({
+  id:'vps-forward-accepts',target:'VPS',kind:'CREATE',
+  summary:`Forward accepts between ${adminInterface} and ${vps.siteInterface}, scoped to ${approvedTargets.join(', ')}`,
+  why:'Permits only the management flow across the two tunnels, in both directions, with the return direction limited to established and related.',
+  rest:null,command:forwardRules.join('\n'),
+  persistent:`Written as PostUp/PostDown in /etc/wireguard/${adminInterface}.conf:\n`+forwardRules.map(r=>`PostUp = ${r}`).join('\n')+'\n'+forwardRules.map(r=>`PostDown = ${undo(r)}`).join('\n'),
+  rollback:forwardRules.map(undo).join('\n'),
+  affectsExisting:null,
+ });
+
+ // The only edit to something that already exists, and it is on our own host.
+ const runtimeBefore=facts.runtimeAllowedIps??'<capture with: wg show '+vps.siteInterface+' allowed-ips>';
+ const persistentBefore=facts.persistentAllowedIps??'<capture with: grep AllowedIPs '+(facts.wgConfigPath??`/etc/wireguard/${vps.siteInterface}.conf`)+'>';
+ const nextAllowed=(before:string)=>before.startsWith('<')?`${before} plus ${approvedTargets.map(a=>a+'/32').join(',')}`:[...new Set([...before.split(/[\s,]+/).filter(Boolean),...approvedTargets.map(a=>a+'/32')])].join(',');
  changes.push({
   id:'vps-site-peer-allowed-ips',target:'VPS',kind:'MODIFY',
   summary:`Add ${approvedTargets.map(a=>a+'/32').join(', ')} to the ${vps.siteInterface} peer AllowedIPs`,
-  why:'WireGuard uses AllowedIPs both to choose the peer for an outbound packet and to accept an inbound source. Without the target address the reply is dropped by the tunnel itself, before any firewall sees it.',
+  why:'WireGuard uses AllowedIPs both to choose the peer for an outbound packet and to accept an inbound source. Without the target address the reply from the device is discarded by the tunnel itself, before any firewall sees it.',
   rest:null,
-  command:[`# capture the current value first — this is the rollback value:`,
-   `wg show ${vps.siteInterface} allowed-ips`,
-   `wg set ${vps.siteInterface} peer ${vps.peerPublicKey??'<router public key>'} allowed-ips ${[vps.currentAllowedIps??'10.77.0.2/32',...approvedTargets.map(a=>a+'/32')].join(',')}`,
-   `# persist the same value in /etc/wireguard/${vps.siteInterface}.conf`].join('\n'),
-  rollback:`wg set ${vps.siteInterface} peer <router public key> allowed-ips ${vps.currentAllowedIps??'<captured before-state>'} and restore /etc/wireguard/${vps.siteInterface}.conf`,
-  affectsExisting:`${vps.siteInterface} peer ${vps.peerPublicKey??'<router public key>'}`,
+  command:`# runtime (takes effect immediately, lost on restart)\n#   before: ${runtimeBefore}\nwg set ${vps.siteInterface} peer ${vps.peerPublicKey??'<router public key>'} allowed-ips ${nextAllowed(runtimeBefore)}\n#   after:  ${nextAllowed(runtimeBefore)}`,
+  persistent:`# ${facts.wgConfigPath??`/etc/wireguard/${vps.siteInterface}.conf`}, [Peer] section\n#   before: AllowedIPs = ${persistentBefore}\n#   after:  AllowedIPs = ${nextAllowed(persistentBefore)}\n# Edit the file in place. Do NOT run "wg-quick down ${vps.siteInterface}" to apply it.`,
+  rollback:`wg set ${vps.siteInterface} peer ${vps.peerPublicKey??'<router public key>'} allowed-ips ${runtimeBefore}   # runtime\n# then restore AllowedIPs = ${persistentBefore} in ${facts.wgConfigPath??`/etc/wireguard/${vps.siteInterface}.conf`}`,
+  affectsExisting:`${vps.siteInterface} peer ${vps.peerPublicKey??'<router public key>'} (runtime and on disk)`,
  });
- if(!vps.currentAllowedIps)warnings.push(`The current ${vps.siteInterface} AllowedIPs could not be read without root. Apply must capture it first — the rollback value depends on it.`);
+ warnings.push(`Do not restart ${vps.siteInterface} to apply the persistent change. Hotspot RADIUS runs over that tunnel, so bouncing it interrupts voucher logins for customers at the shop. Apply the runtime change with "wg set" and edit the file for the next restart; the two must be done together or the management path silently disappears at the next reboot.`);
 
- // ── MikroTik: additive accepts only ──
+ if(facts.ipForward!==undefined&&facts.ipForward.trim()!=='1')changes.push({
+  id:'vps-ip-forward',target:'VPS',kind:'MODIFY',
+  summary:'Enable net.ipv4.ip_forward',
+  why:'The VPS has to forward between the admin tunnel and the site tunnel. It is currently disabled.',
+  rest:null,
+  command:'sysctl -w net.ipv4.ip_forward=1',
+  persistent:"printf 'net.ipv4.ip_forward=1\\n' > /etc/sysctl.d/99-portal-remote-access.conf && sysctl --system",
+  rollback:'rm -f /etc/sysctl.d/99-portal-remote-access.conf   # do NOT set it back to 0: Docker needs forwarding and containers would lose networking',
+  affectsExisting:'net.ipv4.ip_forward',
+ });
+
+ // ── MikroTik ──────────────────────────────────────────────────────────────
  const guest=input.targetInterface;
  const outDrop=forwardDropToInterface(rules,guest);
  const inDrop=targets.length?forwardDropFromInterface(rules,guest,vps.tunnelAddress,lists):null;
  const inputPath:InputPathAnalysis=analyzeInputPath(rules,guest);
+ const removeByMarker=(extra:string)=>`/ip firewall filter remove [find comment="${marker}"${extra}]`;
 
  for(const target of targets){
   if(!outDrop)blockers.push(`Could not locate the forward drop for traffic leaving towards ${guest}. Refusing to guess an insertion point.`);
@@ -136,9 +250,10 @@ export function buildPlan(input:PlanInput):Plan{
    id:`mikrotik-forward-to-${target.address}`,target:'MIKROTIK',kind:'CREATE',
    summary:`forward accept ${vps.tunnelAddress} → ${target.address}, placed before ${outDrop['.id']}`,
    why:`Rule ${outDrop['.id']} ("${outDrop.comment??''}") drops everything leaving towards ${guest}. Management traffic arrives from the tunnel already source-NATed to ${vps.tunnelAddress}.`,
-   rest:{method:'PUT',path:'ip/firewall/filter',body:{chain:'forward',action:'accept','in-interface':vps.siteInterface,'src-address':vps.tunnelAddress,'dst-address':target.address,comment,'place-before':outDrop['.id']}},
-   command:`/ip firewall filter add chain=forward action=accept in-interface=${vps.siteInterface} src-address=${vps.tunnelAddress} dst-address=${target.address} comment="${comment}" place-before=${outDrop['.id']}`,
-   rollback:`/ip firewall filter remove [find comment="${comment}" and chain=forward and dst-address=${target.address}]`,
+   rest:{method:'PUT',path:'ip/firewall/filter',body:{chain:'forward',action:'accept','in-interface':vps.siteInterface,'src-address':vps.tunnelAddress,'dst-address':target.address,comment:marker,'place-before':outDrop['.id']}},
+   command:`/ip firewall filter add chain=forward action=accept in-interface=${vps.siteInterface} src-address=${vps.tunnelAddress} dst-address=${target.address} comment="${marker}" place-before=${outDrop['.id']}`,
+   persistent:'RouterOS configuration is persistent as written. No separate step.',
+   rollback:removeByMarker(` and chain=forward and dst-address=${target.address}`),
    affectsExisting:null,
   });
 
@@ -147,9 +262,10 @@ export function buildPlan(input:PlanInput):Plan{
    id:`mikrotik-forward-from-${target.address}`,target:'MIKROTIK',kind:'CREATE',
    summary:`forward accept ${target.address} → ${vps.tunnelAddress}, established/related only${inDrop?`, placed before ${inDrop['.id']}`:''}`,
    why:inDrop?`Rule ${inDrop['.id']} ("${inDrop.comment??''}") drops traffic from ${guest} to private destinations, and ${vps.tunnelAddress} falls inside its ${inDrop['dst-address-list']} list. Only replies to connections we opened are accepted.`:'Replies to connections opened from the tunnel.',
-   rest:{method:'PUT',path:'ip/firewall/filter',body:{chain:'forward',action:'accept','in-interface':guest,'src-address':target.address,'dst-address':vps.tunnelAddress,'connection-state':'established,related',comment,...(inDrop?{'place-before':inDrop['.id']}:{})}},
-   command:`/ip firewall filter add chain=forward action=accept in-interface=${guest} src-address=${target.address} dst-address=${vps.tunnelAddress} connection-state=established,related comment="${comment}"${inDrop?` place-before=${inDrop['.id']}`:''}`,
-   rollback:`/ip firewall filter remove [find comment="${comment}" and chain=forward and src-address=${target.address}]`,
+   rest:{method:'PUT',path:'ip/firewall/filter',body:{chain:'forward',action:'accept','in-interface':guest,'src-address':target.address,'dst-address':vps.tunnelAddress,'connection-state':'established,related',comment:marker,...(inDrop?{'place-before':inDrop['.id']}:{})}},
+   command:`/ip firewall filter add chain=forward action=accept in-interface=${guest} src-address=${target.address} dst-address=${vps.tunnelAddress} connection-state=established,related comment="${marker}"${inDrop?` place-before=${inDrop['.id']}`:''}`,
+   persistent:'RouterOS configuration is persistent as written. No separate step.',
+   rollback:removeByMarker(` and chain=forward and src-address=${target.address}`),
    affectsExisting:null,
   });
 
@@ -158,9 +274,10 @@ export function buildPlan(input:PlanInput):Plan{
    id:`mikrotik-input-icmp-${target.address}`,target:'MIKROTIK',kind:'CREATE',
    summary:`input accept ICMP replies from ${target.address} only, placed before ${inputPath.dropRuleId}`,
    why:`${inputPath.explanation} Scoped to ICMP from ${target.address} alone, so the blanket guest drop keeps protecting router management from every other customer.`,
-   rest:{method:'PUT',path:'ip/firewall/filter',body:{chain:'input',action:'accept','in-interface':guest,'src-address':target.address,protocol:'icmp','connection-state':'established,related',comment,'place-before':inputPath.dropRuleId}},
-   command:`/ip firewall filter add chain=input action=accept in-interface=${guest} src-address=${target.address} protocol=icmp connection-state=established,related comment="${comment}" place-before=${inputPath.dropRuleId}`,
-   rollback:`/ip firewall filter remove [find comment="${comment}" and chain=input]`,
+   rest:{method:'PUT',path:'ip/firewall/filter',body:{chain:'input',action:'accept','in-interface':guest,'src-address':target.address,protocol:'icmp','connection-state':'established,related',comment:marker,'place-before':inputPath.dropRuleId}},
+   command:`/ip firewall filter add chain=input action=accept in-interface=${guest} src-address=${target.address} protocol=icmp connection-state=established,related comment="${marker}" place-before=${inputPath.dropRuleId}`,
+   persistent:'RouterOS configuration is persistent as written. No separate step.',
+   rollback:removeByMarker(' and chain=input'),
    affectsExisting:null,
   });
  }
@@ -174,49 +291,71 @@ export function buildPlan(input:PlanInput):Plan{
  const guarantees=[
   customerTouching.length?`REFUSED: the plan touches ${customerTouching.join(', ')}.`:'No existing Hotspot, NAT, DHCP, bridge, VLAN or queue configuration will be modified.',
   'Every MikroTik object in this plan is an insert. Nothing existing is edited, renamed, disabled or removed.',
-  `Every MikroTik object carries comment "${comment}", and rollback removes objects by that marker alone.`,
+  `Every MikroTik object carries comment "${marker}". Rollback matches that whole marker, including the provision id, so it cannot reach an object created by a different provisioning run at this site.`,
   'The router needs no WireGuard peer change, no route and no change to the customer path.',
   `Only ${approvedTargets.join(', ')} becomes reachable. No other address on ${guest} is opened.`,
+  'Customer traffic never enters the VPS: the SNAT matches only the admin subnet towards an approved target, and the customer internet path stays customer → EAP → MikroTik → ISP.',
  ];
  if(customerTouching.length)blockers.push(`Plan names a customer-facing path: ${customerTouching.join(', ')}.`);
 
  const plan:Omit<Plan,'digest'>={
-  version:1,architecture:'VPS_SNAT',generatedAt:new Date().toISOString(),siteId,
+  version:2,architecture:'VPS_SNAT',generatedAt:new Date().toISOString(),siteId,provisionId,marker,
   managementCidr,adminInterface,siteInterface:vps.siteInterface,serverTunnelAddress:vps.tunnelAddress,approvedTargets,
-  creates,changes,deletes:[],existingObjectsAffected:existing,
+  preflight,creates,changes,deletes:[],existingObjectsAffected:existing,
   beforeState:{
-   routerOs:snap.version,identity:snap.identity,uptime:snap.uptime,
-   addresses:snap.addresses.map(a=>`${a.address} on ${a.interface}`),
-   defaultRoute:snap.routes.find(r=>r['dst-address']==='0.0.0.0/0')?.gateway??null,
-   hotspot:snap.hotspots.map(h=>`${h.name} on ${h.interface} disabled=${h.disabled} invalid=${h.invalid}`),
-   wireguardPeers:snap.wireguardPeers.map(p=>`${p.interface} allowed=${p['allowed-address']} handshake=${p['last-handshake']??'never'}`),
-   firewallRuleCount:rules.length,
-   firewallOrder:rules.map((r,index)=>`${index} ${r['.id']} ${r.chain} ${r.action} ${r.comment??''}`),
-   vpsCapturedAtApplyTime:[`wg show ${vps.siteInterface} allowed-ips`,`ip route`,'iptables -t nat -S POSTROUTING','iptables -S FORWARD','sysctl net.ipv4.ip_forward'],
+   capturedAt:facts.capturedAt??null,
+   router:{os:snap.version,identity:snap.identity,uptime:snap.uptime,
+    addresses:snap.addresses.map(a=>`${a.address} on ${a.interface}`),
+    defaultRoute:snap.routes.find(r=>r['dst-address']==='0.0.0.0/0')?.gateway??null,
+    hotspot:snap.hotspots.map(h=>`${h.name} on ${h.interface} disabled=${h.disabled} invalid=${h.invalid}`),
+    wireguardPeers:snap.wireguardPeers.map(p=>`${p.interface} allowed=${p['allowed-address']} handshake=${p['last-handshake']??'never'}`),
+    firewallRuleCount:rules.length,
+    firewallOrder:rules.map((r,index)=>`${index} ${r['.id']} ${r.chain} ${r.action} ${r.comment??''}`)},
+   vps:{
+    ipForward:facts.ipForward??'<unverified>',
+    persistenceManager:facts.wgManager??'<unverified>',
+    persistenceUnit:facts.wgUnit??null,
+    configPath:facts.wgConfigPath??null,
+    runtimeAllowedIps:facts.runtimeAllowedIps??'<unverified>',
+    persistentAllowedIps:facts.persistentAllowedIps??'<unverified>',
+    routeToTarget:facts.routeToTarget??'<unverified>'},
   },
   expectedAfterState:{
-   firewallRuleCount:rules.length+creates.filter(a=>a.target==='MIKROTIK').length,
-   newRules:creates.filter(a=>a.target==='MIKROTIK').map(a=>a.summary),
-   unchanged:['default route','WAN address','hotspot server and profile','DHCP servers and networks','all NAT rules','bridges and ports','the existing WireGuard peer on the router'],
-   vpsRoutes:[`${approvedTargets.map(a=>a+'/32').join(', ')} via ${vps.siteInterface}`,`${managementCidr} via ${adminInterface}`],
+   router:{firewallRuleCount:rules.length+creates.filter(a=>a.target==='MIKROTIK').length,
+    newRules:creates.filter(a=>a.target==='MIKROTIK').map(a=>a.summary),
+    unchanged:['default route','WAN address','hotspot server and profile','DHCP servers and networks','all NAT rules','bridges and ports','the existing WireGuard peer on the router']},
+   vps:{
+    runtimeAllowedIps:nextAllowed(runtimeBefore),
+    persistentAllowedIps:nextAllowed(persistentBefore),
+    routes:[`${approvedTargets.map(a=>a+'/32').join(', ')} dev ${vps.siteInterface}`,`${managementCidr} dev ${adminInterface}`],
+    ipForward:'1',
+    unchanged:['the default route','eth0 addressing','every Docker network and published port','the RADIUS binding on the tunnel address']},
   },
   healthChecks:[
    {id:'router-reachable',description:'The router still answers the portal connection',how:'GET /rest/system/resource through the existing read-only account'},
    {id:'hotspot-running',description:'The customer hotspot is still enabled and valid',how:'GET /rest/ip/hotspot — babu-hotspot disabled=false invalid=false'},
+   {id:'radius-path',description:'Voucher logins still work over the tunnel',how:`Confirm the RADIUS listener is still bound on ${vps.tunnelAddress}:1812/1813 and log in one test voucher`},
    {id:'default-route',description:'The default route is unchanged',how:'GET /rest/ip/route — compare 0.0.0.0/0 gateway against beforeState'},
    {id:'wan',description:'WAN connectivity is unchanged',how:'GET /rest/ip/address — ether1 address unchanged; router pings its upstream gateway'},
    {id:'wg-running',description:'The site WireGuard interface is running',how:'GET /rest/interface/wireguard'},
    {id:'wg-handshake',description:'The site peer handshake is recent',how:'GET /rest/interface/wireguard/peers — last-handshake under two minutes'},
-   {id:'vps-to-router',description:'The VPS reaches the router tunnel address',how:`ping ${'{router tunnel ip}'} from the VPS`},
-   {id:'router-to-target',description:'The router reaches the target, now that replies are permitted',how:`POST /rest/tool/ping address=${approvedTargets[0]??'<target>'}`},
-   {id:'tunnel-to-target',description:'The target answers through the management tunnel',how:`TCP connect to ${approvedTargets[0]??'<target>'}:80 and :443 from the VPS`},
+   {id:'vps-route',description:'The host now routes the target over the tunnel',how:`ip route get ${primary} — expect "dev ${vps.siteInterface}"`},
+   {id:'router-to-target',description:'The router reaches the target, now that replies are permitted',how:`POST /rest/tool/ping address=${primary}`},
+   {id:'tunnel-to-target',description:'The target answers through the management tunnel',how:`Set MANAGEMENT_ROUTE_READY=true, then TCP connect to ${primary}:80 and :443 from the VPS`},
+   {id:'no-customer-leak',description:'Customer traffic still never enters the VPS',how:`iptables -t nat -L POSTROUTING -v -n — the SNAT counter moves only when an admin is connected, and only for ${primary}`},
   ],
   rollback:[
-   `/ip firewall filter remove [find comment="${comment}"]   # removes only objects this module created`,
+   `# MikroTik — removes only this provisioning run's objects`,
+   removeByMarker(''),
+   '',
+   `# VPS`,
    `systemctl disable --now wg-quick@${adminInterface}        # drops the SNAT and forward rules with the interface`,
-   `wg set ${vps.siteInterface} peer <router public key> allowed-ips ${vps.currentAllowedIps??'<captured before-state>'}`,
+   ...targets.map(t=>`ip route del ${t.address}/32 dev ${vps.siteInterface}`),
+   `wg set ${vps.siteInterface} peer ${vps.peerPublicKey??'<router public key>'} allowed-ips ${runtimeBefore}`,
+   `# restore AllowedIPs = ${persistentBefore} in ${facts.wgConfigPath??`/etc/wireguard/${vps.siteInterface}.conf`}`,
    `rm -f /etc/wireguard/${adminInterface}.conf`,
-   'The portal connection used to perform the change is never touched by rollback.',
+   '',
+   `# ${vps.siteInterface} is never brought down by rollback: RADIUS and the portal's router connection both run over it.`,
   ],
   guarantees,warnings,blockers,
  };

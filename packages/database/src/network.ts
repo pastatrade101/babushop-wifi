@@ -163,12 +163,17 @@ export async function plan(staff:Staff,siteId:string){
    siteId,snapshot:snap,
    managementTargets:approved.map(d=>({address:String(d.ip_address),label:d.hostname??d.mac_address})),
    targetInterface:approved[0].interface??'',
+   // No preflight facts are passed: this process runs in its own network
+   // namespace and cannot see the host's routing table, forwarding flag or
+   // WireGuard state. The plan marks them UNVERIFIED and carries the commands
+   // that capture them, rather than reporting the container's values as the
+   // server's.
    vps:{siteInterface:record.site_interface,tunnelAddress:record.server_tunnel_address??'10.77.0.1'},
   });
   return tx(async db=>{
    await db.query("update wifi.network_plans set status='SUPERSEDED' where network_site_id=$1 and status='DRAFT'",[siteId]);
-   const row=(await db.query('insert into wifi.network_plans(network_site_id,created_by,digest,plan) values($1,$2,$3,$4) returning *',[siteId,staff.id,built.digest,built])).rows[0];
-   await audit(db,staff.id,'NETWORK_PLAN_DRAFTED',row.id,{digest:built.digest,creates:built.creates.length,changes:built.changes.length,blockers:built.blockers});
+   const row=(await db.query('insert into wifi.network_plans(network_site_id,created_by,digest,provision_id,plan) values($1,$2,$3,$4,$5) returning *',[siteId,staff.id,built.digest,built.provisionId,built])).rows[0];
+   await audit(db,staff.id,'NETWORK_PLAN_DRAFTED',row.id,{digest:built.digest,provision:built.provisionId,creates:built.creates.length,changes:built.changes.length,blockers:built.blockers});
    return row;
   });
  });

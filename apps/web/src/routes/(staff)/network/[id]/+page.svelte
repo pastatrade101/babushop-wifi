@@ -187,6 +187,23 @@ async function copyUrl(value:string){try{await navigator.clipboard.writeText(val
  {#if plan}
   <div class="plan">
    <p class="small">Generated {date(plan.generatedAt)} · architecture {plan.architecture} · digest {plan.digest.slice(0,16)}…</p>
+   <p class="small marker">Every object this run creates is marked <code>{plan.marker}</code>. Rollback matches that whole marker, so it cannot reach another run's rules.</p>
+
+   <h3>Preflight</h3>
+   <p class="small">Host facts the portal cannot read for itself: this process runs in its own network namespace, so the server's routing table, forwarding flag and WireGuard state have to be captured on the host.</p>
+   <div class="table-wrap">
+    <table>
+     <thead><tr><th>Check</th><th>Expected</th><th>Observed</th><th>Status</th></tr></thead>
+     <tbody>{#each plan.preflight as item}
+      <tr>
+       <td>{item.description}<br/><code class="cmd">{item.command}</code></td>
+       <td>{item.expected}</td>
+       <td>{item.observed ?? '—'}</td>
+       <td><span class="pf {item.status.toLowerCase()}">{item.status.replace('_',' ')}</span><br/><span class="small">{item.note}</span></td>
+      </tr>
+     {/each}</tbody>
+    </table>
+   </div>
 
    {#each plan.guarantees as guarantee}
     <p class="guarantee {guarantee.startsWith('REFUSED')?'bad':'good'}"><Icon name={guarantee.startsWith('REFUSED')?'alert':'check'} size={16}/>{guarantee}</p>
@@ -201,9 +218,10 @@ async function copyUrl(value:string){try{await navigator.clipboard.writeText(val
     <article class="action">
      <header><span class="badge">{action.target}</span><strong>{action.summary}</strong></header>
      <p class="small">{action.why}</p>
-     <pre>{action.command}</pre>
+     <p class="step-label">Runtime</p><pre>{action.command}</pre>
+     {#if action.persistent}<p class="step-label">Persistent</p><pre>{action.persistent}</pre>{/if}
      {#if action.rest}<p class="small rest">REST: {action.rest.method} /rest/{action.rest.path} {JSON.stringify(action.rest.body)}</p>{/if}
-     <p class="small">Rollback: <code>{action.rollback}</code></p>
+     <p class="step-label">Rollback</p><pre>{action.rollback}</pre>
     </article>
    {/each}
 
@@ -213,9 +231,10 @@ async function copyUrl(value:string){try{await navigator.clipboard.writeText(val
      <article class="action modify">
       <header><span class="badge warning">{action.target}</span><strong>{action.summary}</strong></header>
       <p class="small">{action.why}</p>
-      <pre>{action.command}</pre>
+      <p class="step-label">Runtime</p><pre>{action.command}</pre>
+      {#if action.persistent}<p class="step-label">Persistent</p><pre>{action.persistent}</pre>{/if}
       <p class="small">Existing object: <code>{action.affectsExisting}</code></p>
-      <p class="small">Rollback: <code>{action.rollback}</code></p>
+      <p class="step-label">Rollback</p><pre>{action.rollback}</pre>
      </article>
     {/each}
    {/if}
@@ -322,6 +341,13 @@ async function copyUrl(value:string){try{await navigator.clipboard.writeText(val
  .action header{display:flex;align-items:center;gap:10px;margin-bottom:7px;flex-wrap:wrap}
  .action header strong{font-size:.86rem}
  .rest{font-family:ui-monospace,monospace;overflow-wrap:anywhere}
+ .step-label{font-size:.63rem;letter-spacing:.09em;font-weight:700;color:#7a8b7e;margin:12px 0 5px}
+ .marker code{background:#f2f6f1;padding:2px 5px;border-radius:4px}
+ .cmd{font-size:.68rem;color:#6f7f72}
+ .pf{display:inline-block;border-radius:5px;padding:3px 7px;font-size:.62rem;font-weight:700;letter-spacing:.05em}
+ .pf.pass{background:#eef6ef;color:#3d7350}
+ .pf.action_required{background:#fff6df;color:#8a692b}
+ .pf.unverified{background:#fdf0ec;color:#9d4c34}
  pre{background:#f5f8f4;border:1px solid #e4ebe3;border-radius:8px;padding:12px;overflow-x:auto;font-size:.73rem;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
  code{font-size:.73rem;overflow-wrap:anywhere}
  .adoption p{font-size:.8rem;margin:6px 0 0}
