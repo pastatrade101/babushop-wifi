@@ -115,7 +115,7 @@ export async function webhook(rawBody:Buffer|string,headers:Record<string,string
   // A refused callback is otherwise a dead end: nothing is recorded, and the
   // first live test tells you only that it failed. The field names alone say
   // whether the provider signed it, and carry none of the buyer's data.
-  await audit(pool,null,'PAYMENT_CALLBACK_REJECTED',null,{provider:provider!.name,fields:callbackShape(rawBody)}).catch(()=>{});
+  await audit(pool,null,'PAYMENT_CALLBACK_REJECTED',null,{provider:provider!.name,shape:callbackShape(rawBody,headers)}).catch(()=>{});
   throw new Problem(401,'Invalid signature');
  }
  const event=provider!.parseEvent(JSON.parse(Buffer.isBuffer(rawBody)?rawBody.toString('utf8'):String(rawBody)));

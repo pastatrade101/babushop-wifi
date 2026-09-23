@@ -209,15 +209,27 @@ export const azamProvider:PaymentProvider={
 };
 
 /**
- * The field names a rejected callback carried -- names only, never values.
- * Enough to see whether the provider signed it, without recording anyone's
- * phone number or reference.
+ * The shape of a rejected callback -- names only, never values.
+ *
+ * This is how the signing scheme gets settled. The published SDKs disagree
+ * about where AzamPay puts the signature: one reads a `signature` field in the
+ * body, another an `x-azampay-signature` header, and they differ on which
+ * fields the signature covers. One real callback answers it, and until then
+ * nothing here assumes an answer.
+ *
+ * Header and body names only. A phone number or a reference never lands in the
+ * audit trail this way.
  */
-export function callbackShape(rawBody:Buffer|string):string[]{
+export function callbackShape(rawBody:Buffer|string,headers:Record<string,string|undefined>={}):string[]{
+ const shape:string[]=[];
  try{
   const body=JSON.parse(Buffer.isBuffer(rawBody)?rawBody.toString('utf8'):String(rawBody));
-  return body&&typeof body==='object'?Object.keys(body).sort():[];
- }catch{return [];}
+  if(body&&typeof body==='object')shape.push(...Object.keys(body).sort().map(name=>'body.'+name));
+ }catch{shape.push('body.<unparseable>');}
+ // Anything that looks like it could carry a signature, plus the content type.
+ for(const name of Object.keys(headers).sort())
+  if(/sign|auth|azam|hash|digest|content-type/i.test(name))shape.push('header.'+name.toLowerCase());
+ return shape;
 }
 
 export const isAzamFailure=(status:string)=>{const s=status.toLowerCase();return FAILED.some(word=>s.includes(word));};

@@ -106,9 +106,16 @@ it('cannot ask AzamPay about a collection, and does not pretend to',async()=>{
 });
 
 it('records the shape of a refused callback without its contents',()=>{
- expect(callbackShape(JSON.stringify(CALLBACK))).toEqual(['amount','externalreference','operator','transactionstatus','utilityref']);
- expect(callbackShape(JSON.stringify(CALLBACK)).join()).not.toContain('JW-ABC');
- expect(callbackShape('not json')).toEqual([]);
+ const shape=callbackShape(JSON.stringify(CALLBACK),{'x-azampay-signature':'abc','content-type':'application/json','user-agent':'x'});
+ // Body names, then any header that could carry a signature. Values never.
+ expect(shape).toContain('body.utilityref');
+ expect(shape).toContain('body.transactionstatus');
+ expect(shape).toContain('header.x-azampay-signature');
+ expect(shape).toContain('header.content-type');
+ expect(shape).not.toContain('header.user-agent');
+ expect(shape.join()).not.toContain('JW-ABC');
+ expect(shape.join()).not.toContain('abc');
+ expect(callbackShape('not json')).toEqual(['body.<unparseable>']);
 });
 
 it('declares the flow the buy page has to render',()=>{
