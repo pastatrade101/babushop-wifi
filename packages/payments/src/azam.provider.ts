@@ -57,15 +57,21 @@ export const AZAM_NETWORKS:Network[]=[
 ];
 
 /**
- * Tanzanian mobile numbers, normalised to the 2557XXXXXXXX form AzamPay expects.
- * Accepts 07…, 7…, +2557… and 2557…; rejects anything else rather than sending
- * a number the network will silently fail to reach.
+ * Tanzanian mobile numbers, normalised to the local 0XXXXXXXXX form.
+ *
+ * Not the 255… international form. The gateway this shop settles through is
+ * driven by an integration that validates /^0\d{9}$/ and forwards the number
+ * untouched, and those payments reach handsets -- so the ten-digit local form
+ * is what demonstrably works, whatever the international convention suggests.
+ *
+ * Accepts 07…, 7…, +2557… and 2557… from the buyer, and rejects anything else
+ * rather than sending a number the network will silently fail to reach.
  */
 export function normalizePhone(value:string):string{
  const digits=(value||'').replace(/\D/g,'');
  const local=digits.startsWith('255')?digits.slice(3):digits.startsWith('0')?digits.slice(1):digits;
  if(!/^[67]\d{8}$/.test(local))throw new Problem(400,'Enter a valid Tanzanian mobile number, for example 0712 345 678.');
- return '255'+local;
+ return '0'+local;
 }
 
 /** PEM for the checkout callback key. Accepts a literal newline or an escaped one. */
@@ -123,10 +129,15 @@ export const azamProvider:PaymentProvider={
    accountNumber,amount:String(amount),currency:input.currency,
    externalId:input.reference,provider:network,
    // `source` is what the settling partner disburses against, so it has to be
-   // exactly the name they expect. `intent_reference` is echoed back on the
-   // callback and is the dependable way home when the network rewrites
-   // externalId into one of its own reference fields.
-   additionalProperties:{source:sourceName(),intent_reference:input.reference},
+   // exactly the name they expect.
+   //
+   // The reference is carried three ways because only one of them is
+   // guaranteed to survive. AzamPay types additionalProperties as property1 and
+   // property2, so a custom key can be dropped in transit; externalId is
+   // routinely rewritten by the network into one of its own reference fields.
+   // property2 is the one AzamPay itself promises to carry, and the working
+   // integration this shop settles through reads exactly that.
+   additionalProperties:{source:sourceName(),property1:sourceName(),property2:input.reference,intent_reference:input.reference},
   };
   let response:Response,text='';
   try{
@@ -180,7 +191,9 @@ export const azamProvider:PaymentProvider={
   const additional=(e.additionalProperties||{}) as Callback;
   const reference=first(e,'transid','transactionId','transaction_id','pgReferenceId','reference','mnoreference','mnoReference','fspReferenceId');
   if(!reference)throw new Problem(400,'Callback is missing a transaction reference');
-  const own=first(additional,'intent_reference')||first(e,'utilityref','utilityRef','externalId','external_id','externalID','externalreference','externalReference','external_reference');
+  // property2 before intent_reference: it is the field AzamPay guarantees to
+  // carry, so it is the one most likely to come back untouched.
+  const own=first(additional,'property2','intent_reference')||first(e,'utilityref','utilityRef','externalId','external_id','externalID','externalreference','externalReference','external_reference');
   const status=(first(e,'transactionstatus','transactionStatus','status','statusCode','message')||'').toLowerCase();
   const amount=Number(first(e,'amount','Amount'));
   // No event id of its own, so the transaction reference plus its reported

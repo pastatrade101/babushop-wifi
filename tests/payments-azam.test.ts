@@ -8,11 +8,39 @@ const saved=Object.fromEntries(KEYS.map(k=>[k,process.env[k]]));
 afterEach(()=>{for(const k of KEYS){if(saved[k]===undefined)delete process.env[k];else process.env[k]=saved[k];}});
 const azamConfigured=()=>{process.env.AZAM_APP_NAME='JIACHIE';process.env.AZAM_CLIENT_ID='id';process.env.AZAM_CLIENT_SECRET='secret';process.env.AZAM_CALLBACK_TOKEN='tok';};
 
-it('normalizes every shape a Tanzanian number is written in',()=>{
+it('sends the local 0XXXXXXXXX form, which is what actually reaches handsets',()=>{
  for(const value of ['0712345678','712345678','+255712345678','255712345678','0712 345 678','+255 712-345-678'])
-  expect(normalizePhone(value)).toBe('255712345678');
- expect(normalizePhone('0655000111')).toBe('255655000111');
+  expect(normalizePhone(value)).toBe('0712345678');
+ expect(normalizePhone('0655000111')).toBe('0655000111');
+ // Exactly the shape the settling partner's integration validates.
+ expect(/^0\d{9}$/.test(normalizePhone('+255 712 345 678'))).toBe(true);
  for(const bad of ['071234567','07123456789','0812345678','','abc'])expect(()=>normalizePhone(bad)).toThrow();
+});
+
+it('maps every network AzamPay accepts, and nothing it does not',async()=>{
+ // Airtel, Tigo, Halopesa, Azampesa, Mpesa -- the documented enum.
+ expect(azamProvider.networks.map(n=>n.value)).toEqual(['vodacom','airtel','tigo','halopesa','azampesa']);
+ azamConfigured();
+ const seen:string[]=[];
+ const realFetch=globalThis.fetch;
+ globalThis.fetch=(async(url:any,init:any)=>{
+  if(String(url).includes('GenerateToken'))return new Response(JSON.stringify({data:{accessToken:'t'}}),{status:200});
+  seen.push(JSON.parse(init.body).provider);
+  return new Response(JSON.stringify({transactionId:'TX'}),{status:200});
+ }) as any;
+ try{
+  for(const network of ['vodacom','airtel','tigo','halopesa','azampesa'])
+   await azamProvider.createCheckout({amount:1000,currency:'TZS',description:'d',reference:'JW-N',
+    customer:{phone:'0712345678'},network,returnUrl:'https://x/y',webhookUrl:'https://x/w'});
+  expect(seen).toEqual(['Mpesa','Airtel','Tigo','Halopesa','Azampesa']);
+ }finally{globalThis.fetch=realFetch;}
+});
+
+it('prefers property2 for the reference, as AzamPay guarantees to carry it',()=>{
+ const viaProperty2=azamProvider.parseEvent({additionalProperties:{property2:'JW-P2',intent_reference:'JW-CUSTOM'},transid:'T7',status:'success'});
+ expect(viaProperty2.ownReference).toBe('JW-P2');
+ const viaCustom=azamProvider.parseEvent({additionalProperties:{intent_reference:'JW-CUSTOM'},transid:'T7',status:'success'});
+ expect(viaCustom.ownReference).toBe('JW-CUSTOM');
 });
 
 it('reads a callback whatever the network chose to call the fields',()=>{
@@ -173,7 +201,12 @@ it('marks the transaction as ours, for the partner who disburses it',async()=>{
   expect(result).toMatchObject({provider:'azam',reference:'TX1',checkout_url:null,flow:'push'});
   expect(sent.body.additionalProperties.source).toBe('Pastory');
   expect(sent.body.additionalProperties.intent_reference).toBe('JW-1');
-  expect(sent.body).toMatchObject({accountNumber:'255712345678',amount:'1000',provider:'Mpesa',externalId:'JW-1'});
+  expect(sent.body).toMatchObject({accountNumber:'0712345678',amount:'1000',currency:'TZS',provider:'Mpesa',externalId:'JW-1'});
+  // The reference rides three fields, because only property2 is guaranteed.
+  expect(sent.body.additionalProperties.property2).toBe('JW-1');
+  expect(sent.body.externalId.length).toBeLessThanOrEqual(128);
+  // Every value AzamPay documents must be a string.
+  for(const key of ['accountNumber','amount','currency','externalId','provider'])expect(typeof sent.body[key]).toBe('string');
   // Direct to AzamPay unless a partner gateway is configured.
   expect(sent.url).toBe('https://checkout.azampay.co.tz/azampay/mno/checkout');
   process.env.AZAM_CHECKOUT_URL='https://partner.example/api/azampay/request/payment';
