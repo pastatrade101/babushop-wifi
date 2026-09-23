@@ -43,8 +43,14 @@ function checkoutUrl():string{
  return url.toString();
 }
 
-/** The name the settling partner disburses against. Never shown to the buyer. */
-const sourceName=()=>process.env.AZAM_SOURCE||'Pastory';
+/**
+ * The tag the settling partner routes and disburses on. Never shown to the buyer.
+ *
+ * Lower case, and it matters: the partner matches this value to decide which
+ * callback URL to return the result to. A capitalised "Pastory" was accepted at
+ * checkout and then silently never called back, because it matched nothing.
+ */
+const sourceName=()=>process.env.AZAM_SOURCE||'pastory';
 
 /** AzamPay's own spelling for each network. The buyer never sees these. */
 const PROVIDERS:Record<string,string>={vodacom:'Mpesa',airtel:'Airtel',tigo:'Tigo',halopesa:'Halopesa',azampesa:'Azampesa'};

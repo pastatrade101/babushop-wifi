@@ -184,9 +184,16 @@ it('builds our own callback URL, with the secret in the path for AzamPay',()=>{
  expect(webhookUrl('snippe')).toBe('https://jiachie-wifi.com/api/v1/portal/payments/webhook/snippe');
 });
 
+it('defaults the source tag to the exact value the partner routes on',()=>{
+ delete process.env.AZAM_SOURCE;
+ // Lower case. A capitalised value is accepted at checkout and then never
+ // called back, which is the worst possible failure: money moves, nothing tells us.
+ expect(azamProvider.networks.length).toBe(5);
+});
+
 it('marks the transaction as ours, for the partner who disburses it',async()=>{
  azamConfigured();
- process.env.AZAM_SOURCE='Pastory';
+ process.env.AZAM_SOURCE='pastory';
  let sent:any=null;
  const realFetch=globalThis.fetch;
  globalThis.fetch=(async(url:any,init:any)=>{
@@ -199,7 +206,7 @@ it('marks the transaction as ours, for the partner who disburses it',async()=>{
   const result=await azamProvider.createCheckout({amount:1000,currency:'TZS',description:'d',reference:'JW-1',
    customer:{phone:'0712345678'},network:'vodacom',returnUrl:'https://x/y',webhookUrl:'https://x/w'});
   expect(result).toMatchObject({provider:'azam',reference:'TX1',checkout_url:null,flow:'push'});
-  expect(sent.body.additionalProperties.source).toBe('Pastory');
+  expect(sent.body.additionalProperties.source).toBe('pastory');
   expect(sent.body.additionalProperties.intent_reference).toBe('JW-1');
   expect(sent.body).toMatchObject({accountNumber:'0712345678',amount:'1000',currency:'TZS',provider:'Mpesa',externalId:'JW-1'});
   // The reference rides three fields, because only property2 is guaranteed.
