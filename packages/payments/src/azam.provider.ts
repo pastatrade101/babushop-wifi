@@ -165,7 +165,7 @@ export const azamProvider:PaymentProvider={
    throw new Problem(502,'Could not reach the payment service. Please try again or pay the attendant.');
   }
   // A rejected token is worth one retry with a fresh one; anything else is not.
-  if(response.status===401){resetToken();lastFailure={at:new Date().toISOString(),status:401,detail:text.slice(0,300)};throw new Problem(502,'The payment service rejected this request. Please try again or pay the attendant.');}
+  if(response.status===401){resetToken();lastFailure={at:new Date().toISOString(),status:401,detail:text.slice(0,1200)};throw new Problem(502,'The payment service rejected this request. Please try again or pay the attendant.');}
   let json:CheckoutResponse={};
   try{json=text?JSON.parse(text):{};}catch{/* non-JSON body */}
   // A partner gateway in front of AzamPay may echo the id under its own name.
@@ -174,7 +174,7 @@ export const azamProvider:PaymentProvider={
   // detail -- but the reason is kept for the operator. A checkout that fails
   // with no record of why is a failure nobody can fix.
   if(!response.ok||json.success===false||!reference){
-   lastFailure={at:new Date().toISOString(),status:response.status,detail:text.slice(0,300)||'(empty body)'};
+   lastFailure={at:new Date().toISOString(),status:response.status,detail:text.slice(0,1200)||'(empty body)'};
    throw new Problem(502,'The payment service could not start this purchase. Please try again or pay the attendant.');
   }
   return {provider:'azam',reference,checkout_url:null,flow:'push',
