@@ -108,7 +108,18 @@ async function accessToken():Promise<string>{
 }
 
 /** Test seam: a failed call must not leave a stale token behind. */
-export function resetToken(){cached=null;}
+export function resetToken(){cached=null;lastFailure=null;}
+
+/**
+ * Why the last checkout failed, for the operator only.
+ *
+ * The buyer is told nothing specific, because a gateway's own message can carry
+ * account detail. But a checkout that fails with no record of why cannot be
+ * fixed by anyone, so the status and a truncated body are kept here and surfaced
+ * through the network status endpoint.
+ */
+let lastFailure:{at:string;status:number;detail:string}|null=null;
+export const lastCheckoutFailure=()=>lastFailure;
 
 interface CheckoutResponse {success?:boolean;transactionId?:string;reference?:string;message?:string;data?:{transactionId?:string}}
 type Callback=Record<string,unknown>;
@@ -149,15 +160,23 @@ export const azamProvider:PaymentProvider={
   try{
    response=await fetch(checkoutUrl(),{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(20000)});
    text=await response.text();
-  }catch{throw new Problem(502,'Could not reach the payment service. Please try again or pay the attendant.');}
+  }catch(error){
+   lastFailure={at:new Date().toISOString(),status:0,detail:'network: '+(error as Error).message};
+   throw new Problem(502,'Could not reach the payment service. Please try again or pay the attendant.');
+  }
   // A rejected token is worth one retry with a fresh one; anything else is not.
-  if(response.status===401){resetToken();throw new Problem(502,'The payment service rejected this request. Please try again or pay the attendant.');}
+  if(response.status===401){resetToken();lastFailure={at:new Date().toISOString(),status:401,detail:text.slice(0,300)};throw new Problem(502,'The payment service rejected this request. Please try again or pay the attendant.');}
   let json:CheckoutResponse={};
   try{json=text?JSON.parse(text):{};}catch{/* non-JSON body */}
   // A partner gateway in front of AzamPay may echo the id under its own name.
   const reference=json.transactionId||json.data?.transactionId||json.reference||null;
-  // Never echo the provider's own message: it can carry account detail.
-  if(!response.ok||json.success===false||!reference)throw new Problem(502,'The payment service could not start this purchase. Please try again or pay the attendant.');
+  // The buyer is told nothing specific -- a gateway's message can carry account
+  // detail -- but the reason is kept for the operator. A checkout that fails
+  // with no record of why is a failure nobody can fix.
+  if(!response.ok||json.success===false||!reference){
+   lastFailure={at:new Date().toISOString(),status:response.status,detail:text.slice(0,300)||'(empty body)'};
+   throw new Problem(502,'The payment service could not start this purchase. Please try again or pay the attendant.');
+  }
   return {provider:'azam',reference,checkout_url:null,flow:'push',
    instruction:'Check your phone. Enter your mobile money PIN to approve the payment.'};
  },
@@ -214,6 +233,8 @@ export const azamProvider:PaymentProvider={
  isPaid(status:string){const s=status.toLowerCase();return PAID.some(word=>s.includes(word))&&!FAILED.some(word=>s.includes(word));},
 
  isFailure(status:string){return isAzamFailure(status);},
+
+ lastFailure(){return lastCheckoutFailure();},
 
  /**
   * Not available for collections.

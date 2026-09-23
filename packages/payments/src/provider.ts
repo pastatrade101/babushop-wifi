@@ -90,6 +90,11 @@ export interface PaymentProvider {
  isPaid(status:string):boolean;
  /** True when `status` is a definitive failure, so stock can be freed at once. */
  isFailure(status:string):boolean;
+ /**
+  * Why the most recent checkout failed, for the operator's audit trail only.
+  * Optional: a provider that cannot say returns nothing and callers carry on.
+  */
+ lastFailure?():unknown;
  /** Reconciliation fallback. Null on any error -- callers must tolerate it. */
  fetchStatus(reference:string):Promise<PaymentStatus|null>;
 }

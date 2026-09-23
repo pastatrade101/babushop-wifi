@@ -58,6 +58,11 @@ export async function start(input:{package_id:string;phone?:string;network?:stri
    returnUrl:(process.env.APP_ORIGIN||'')+'/buy/done',webhookUrl:webhookUrl(provider!.name)
   });
  }catch(error){
+  // Record what the provider actually said before the message is flattened into
+  // something safe for the buyer. Without this a failed checkout leaves nothing
+  // anyone can act on.
+  const detail=provider!.lastFailure?.()??null;
+  await audit(pool,null,'PURCHASE_CHECKOUT_FAILED',intent.id,{provider:provider!.name,reference,detail}).catch(()=>{});
   // Release the hold immediately rather than leaving stock parked for 15 minutes.
   await release(intent.id,'Checkout could not be opened').catch(()=>{});
   throw error;
