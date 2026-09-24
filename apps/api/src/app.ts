@@ -10,6 +10,7 @@ import * as sales from '../../../packages/database/src/sales.ts';
 import * as access from '../../../packages/database/src/access.ts';
 import * as purchases from '../../../packages/database/src/purchases.ts';
 import * as catalogue from '../../../packages/database/src/catalogue.ts';
+import {revenueSummary} from '../../../packages/database/src/revenue.ts';
 import {paymentProvider} from '../../../packages/payments/src/index.ts';
 import {digest,csvCell} from '../../../packages/database/src/crypto.ts';
 import {type Adapter,adapterFromEnv} from '../../../packages/omada/src/index.ts';
@@ -78,6 +79,7 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
  const inventory=async()=> (await pool.query("select count(*) filter(where inventory_state='AVAILABLE')::int stock,count(*) filter(where inventory_state='SOLD' and g.id is null)::int sold_unused,count(*) filter(where g.state='ACTIVE' and g.proposed_expires_at>now())::int active,count(*) filter(where g.state='NEEDS_REVIEW')::int needs_review from wifi.vouchers v left join wifi.access_grants g on g.voucher_id=v.id")).rows[0];
  route('GET','/dashboard',undefined,S.Row,async(r:any)=>r.staff.role==='ADMIN'?{...await totals(),...await inventory()}:await inventory());
  route('GET','/reports/sales',undefined,S.Row,async(r:any)=>totals(r.query.from,r.query.to),true,{schema:{querystring:S.Paging}});
+ route('GET','/reports/revenue',undefined,S.RevenueSummary,async(r:any)=>revenueSummary(r.query.from,r.query.to),true,{schema:{querystring:S.RevenueQuery}});
  route('GET','/reports/inventory',undefined,S.Row,inventory,true);
  // Daily buckets in shop time, zero-filled so a quiet day is a gap at zero
  // rather than a missing point the chart would interpolate straight through.

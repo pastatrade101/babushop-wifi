@@ -146,3 +146,9 @@ label{font-size:.875rem;font-weight:500;gap:8px;margin-bottom:18px}label small{c
 @media print{@page{size:A4;margin:8mm}:root,:root[data-theme=dark]{color-scheme:light;--surface:#fff;--surface-muted:#fff;--background:#fff;--ink:#000;--muted:#444;--line:#b0b0b0;--primary-text:#000;--shadow:none}body{background:white;color:black}.public-theme,.theme-picker{display:none!important}.workspace-main{margin:0}.content{padding:0}.print-preview{border:0;padding:0;margin:0}.printed-voucher{color:#000;background:#fff}.pv-brand,.pv-price,.pv-package,.printed-voucher .voucher-code,.pv-how strong,.pv-foot span:last-child{color:#000}.pv-meta,.pv-how{color:#333}.pv-foot{color:#555}.badge{background:white;color:black}.receipt p{color:black}}
 
 .login-network-art{width:300px;height:300px;max-width:100%;position:relative;border:1px solid var(--line);border-radius:50%;display:grid;place-items:center;margin-bottom:48px}.login-network-art:before{content:'';position:absolute;inset:32px;border:1px dashed var(--primary);opacity:.35;border-radius:50%}.art-orbit{width:138px;height:138px;border-radius:32px;background:var(--primary);color:white;display:grid;place-items:center;box-shadow:0 16px 44px #487fff33}.art-node{position:absolute;width:62px;height:62px;border:6px solid var(--primary-soft);border-radius:20px;background:var(--surface);display:grid;place-items:center;box-shadow:var(--shadow)}.art-ticket{left:0;top:24px;color:var(--purple)}.art-sales{right:-12px;top:100px;color:var(--primary-text)}.art-shield{bottom:-16px;left:76px;color:var(--success)}
+
+/* Keep global controls visible while staff scroll through long records. */
+.topbar{position:sticky;top:0;z-index:25;flex-shrink:0;box-shadow:0 1px 6px var(--shadow-color)}
+html{scroll-padding-top:100px}
+@media(max-width:800px){html{scroll-padding-top:84px}}
+@media print{.topbar{position:static}}

@@ -25,6 +25,13 @@ export const Params=T.Object({id:Id},{additionalProperties:false});
 // Reporting time series. Row's field allowlist is for record shapes, so the
 // chart endpoints carry their own explicit schemas.
 export const TrendQuery=T.Object({days:T.Optional(T.Integer({minimum:7,maximum:180}))},{additionalProperties:false});
+export const RevenueQuery=T.Object({from:T.Optional(T.String({format:'date'})),to:T.Optional(T.String({format:'date'}))},{additionalProperties:false});
+export const RevenueSummary=T.Object({
+ from:T.String({format:'date'}),to:T.String({format:'date'}),gross_tzs:T.Number(),reversals_tzs:T.Number(),net_tzs:T.Number(),sales_count:T.Integer(),vouchers_sold:T.Integer(),
+ cash_gross_tzs:T.Number(),cash_reversals_tzs:T.Number(),cash_net_tzs:T.Number(),
+ azampay_gross_tzs:T.Number(),azampay_reversals_tzs:T.Number(),azampay_net_tzs:T.Number(),azampay_sales_count:T.Integer(),
+ other_gross_tzs:T.Number(),other_reversals_tzs:T.Number(),other_net_tzs:T.Number(),
+},{additionalProperties:false});
 export const Trend=T.Object({items:T.Array(T.Object({day:T.String(),gross_tzs:T.Number(),net_tzs:T.Number(),vouchers_sold:T.Integer()},{additionalProperties:false}))},{additionalProperties:false});
 export const PackageBreakdown=T.Object({items:T.Array(T.Object({package_name:T.String(),vouchers:T.Integer(),revenue_tzs:T.Number()},{additionalProperties:false}))},{additionalProperties:false});
 // Explicit selected columns are the response allowlist. Nested JSON is confined to sanitized evidence.
