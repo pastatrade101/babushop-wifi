@@ -17,7 +17,7 @@ const paths:Record<string,string>={
  arrow:'M5 12h14m-6-6 6 6-6 6',logout:'M9 4H4v16h5m5-13 5 5-5 5M8 12h11',menu:'M4 6h16M4 12h16M4 18h16',close:'m6 6 12 12M6 18 18 6',check:'m5 12 4 4L19 6',clock:'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 7v5l3 2',
  // Router console: WinBox's menu and interface types.
  ethernet:'M4 6h16v12H4zM8 18v-4h8v4M8 10h.01M12 10h.01M16 10h.01',tunnel:'M4 20v-9a8 8 0 0 1 16 0v9M8 20v-8a4 4 0 0 1 8 0v8M2 20h20',
- bridge:'M8 3v18M16 3v18M3 8h18M3 16h18',ip:'M6 7v10M11 17V7h4a3 3 0 0 1 0 6h-4',
+ bridge:'M8 3v18M16 3v18M3 8h18M3 16h18',ip:'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18',
  firewall:'M3 5h18v14H3zM3 10h18M3 15h18M9 5v5M15 10v5M9 15v4',hotspot:'M5 12.5a11 11 0 0 1 14 0M8.5 16a5.5 5.5 0 0 1 7 0M2 8.8a16 16 0 0 1 20 0M12 20h.01',
  queues:'M4 6h16M4 12h11M4 18h6',folder:'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',
  log:'M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7',terminal:'M3 5h18v14H3zM7 10l3 2-3 2M12 15h5',
