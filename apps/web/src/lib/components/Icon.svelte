@@ -14,7 +14,18 @@ const paths:Record<string,string>={
  network:'M12 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6M5 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6m14 0a3 3 0 1 0 0 6 3 3 0 0 0 0-6M12 9v3M6.5 15 11 12.5m2 0 4.5 2.5',
  alert:'M12 9v4m0 3h.01M10.3 3.9 2.4 17a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0',
  settings:'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M10 2h4l1 3 3 1 3-1 2 4-2 2v3l2 2-2 4-3-1-3 1-1 3h-4l-1-3-3-1-3 1-2-4 2-2v-3L0 9l2-4 3 1 3-1z',
- arrow:'M5 12h14m-6-6 6 6-6 6',logout:'M9 4H4v16h5m5-13 5 5-5 5M8 12h11',menu:'M4 6h16M4 12h16M4 18h16',close:'m6 6 12 12M6 18 18 6',check:'m5 12 4 4L19 6',clock:'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 7v5l3 2'
+ arrow:'M5 12h14m-6-6 6 6-6 6',logout:'M9 4H4v16h5m5-13 5 5-5 5M8 12h11',menu:'M4 6h16M4 12h16M4 18h16',close:'m6 6 12 12M6 18 18 6',check:'m5 12 4 4L19 6',clock:'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 7v5l3 2',
+ // Router console: WinBox's menu and interface types.
+ ethernet:'M4 6h16v12H4zM8 18v-4h8v4M8 10h.01M12 10h.01M16 10h.01',tunnel:'M4 20v-9a8 8 0 0 1 16 0v9M8 20v-8a4 4 0 0 1 8 0v8M2 20h20',
+ bridge:'M8 3v18M16 3v18M3 8h18M3 16h18',ip:'M6 7v10M11 17V7h4a3 3 0 0 1 0 6h-4',
+ firewall:'M3 5h18v14H3zM3 10h18M3 15h18M9 5v5M15 10v5M9 15v4',hotspot:'M5 12.5a11 11 0 0 1 14 0M8.5 16a5.5 5.5 0 0 1 7 0M2 8.8a16 16 0 0 1 20 0M12 20h.01',
+ queues:'M4 6h16M4 12h11M4 18h6',folder:'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',
+ log:'M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7',terminal:'M3 5h18v14H3zM7 10l3 2-3 2M12 15h5',
+ key:'M15.5 3a5.5 5.5 0 1 1-4.9 8L4 17.6V21h3v-2h2v-2h2l1.3-1.3A5.5 5.5 0 0 1 15.5 3M17 7h.01',
+ tools:'M14.7 6.3a4 4 0 0 0 5 5L21 10a6 6 0 0 1-7.8 5.7L7 22l-5-5 6.3-6.2A6 6 0 0 1 14 3l-1.3 1.3a4 4 0 0 0 2 2',
+ filter:'M3 5h18l-7 8v6l-4 2v-8z',maximize:'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',lock:'M6 11h12v10H6zM8 11V7a4 4 0 0 1 8 0v4',
+ loopback:'M7 9a3 3 0 1 0 0 6c2 0 3-1.5 5-3s3-3 5-3a3 3 0 1 1 0 6c-2 0-3-1.5-5-3S9 9 7 9',vlan:'M3 12V4h8l10 10-8 8zM7.5 7.5h.01',
+ live:'M12 12h.01M8.5 8.5a5 5 0 0 0 0 7m7-7a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8m12.8-12.8a9 9 0 0 1 0 12.8'
 };
 </script>
 <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={paths[name]||paths.wifi}/></svg>

@@ -242,7 +242,7 @@ export {normalizeMac};
 
 const NOT_ANSWERING='The router is not answering. Check its connection to the server.';
 
-export const routerMenus=()=>({groups:menuTree()});
+export const routerMenus=()=>({nav:menuTree()});
 
 export async function routerOverview(){
  return withRouter(async connection=>{

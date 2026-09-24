@@ -1,5 +1,5 @@
 import {it,expect} from 'vitest';
-import {MENUS,menuById,menuTree,clean,flags,readMenu,overview,maskVouchers,HIDDEN,SCRIPT_HIDDEN} from '../packages/network/src/console.ts';
+import {MENUS,NAV,TERMINAL,menuById,menuTree,clean,flags,readMenu,overview,maskVouchers,HIDDEN,SCRIPT_HIDDEN} from '../packages/network/src/console.ts';
 import type {ReadPath} from '../packages/network/src/index.ts';
 
 const fake=(answers:Partial<Record<ReadPath,unknown>>)=>{
@@ -11,8 +11,13 @@ it('offers a fixed menu list and never hands the browser a router path',()=>{
  expect(new Set(MENUS.map(m=>m.id)).size).toBe(MENUS.length);
  expect(new Set(MENUS.map(m=>m.path)).size).toBe(MENUS.length);
  for(const m of MENUS)expect(m.id).toMatch(/^[a-z0-9-]{1,40}$/);
- for(const item of menuTree().flatMap(g=>g.items))expect(Object.keys(item).sort()).toEqual(['id','label','live','single']);
+ const windows=menuTree().flatMap(e=>e.window?[e.window]:e.windows!);
+ for(const tab of windows.flatMap(w=>w.tabs))expect(Object.keys(tab).sort()).toEqual(['id','label','live','single']);
  expect(JSON.stringify(menuTree())).not.toContain('"path"');
+ // WinBox's menu covers every list exactly once, plus the terminal.
+ const tabs=NAV.flatMap(e=>e.window?[e.window]:e.windows!).flatMap(w=>w.tabs);
+ expect(tabs.filter(t=>t!==TERMINAL).sort()).toEqual(MENUS.map(m=>m.id).sort());
+ expect(new Set(windows.map(w=>w.id)).size).toBe(windows.length);
  expect(menuById('hotspot-active')?.path).toBe('ip/hotspot/active');
  for(const bad of ['../system/reset-configuration','system/reboot','ip/hotspot/active/remove','','Log'])expect(menuById(bad)).toBeNull();
 });
@@ -50,7 +55,7 @@ it('marks rows with WinBox flags and keeps only the columns this router returned
  expect(flags({running:'true',dynamic:'true',slave:'true'})).toBe('DRS');
  const router=fake({interface:[{'.id':'*1',name:'ether1',type:'ether',running:'true','rx-byte':'10','tx-byte':'20'},{'.id':'*2',name:'ether2',type:'ether',disabled:'true'}]});
  const out=await readMenu(router,menuById('interfaces')!);
- expect(out.columns).toEqual(['name','type','rx-byte','tx-byte']);
+ expect(out.columns).toEqual(['name','type','tx-byte','rx-byte']);
  expect(out.items.map(r=>r['.flags'])).toEqual(['R','X']);
  // A menu whose expected columns are all absent still shows something.
  const odd=await readMenu(fake({'ip/pool':[{'.id':'*1',foo:'1',bar:'2'}]}),menuById('pools')!);
@@ -113,6 +118,6 @@ it('prints a RouterOS-shaped table, detail and record',()=>{
  expect(formatPrint({columns:['name','type'],items:rows},{...parsed,detail:true})).toContain('0  R  name=ether1 type=ether');
  const record=formatPrint({columns:[],items:[{uptime:'1d',version:'7.18.2 (stable)'}]},parseCommand('/system resource print') as any);
  expect(record).toBe('   uptime: 1d\n  version: 7.18.2 (stable)');
- expect(formatPing([{host:'8.8.8.8',size:'56',ttl:'117',time:'21ms',status:undefined,sent:'1',received:'1','packet-loss':'0'}])).toContain('sent=1 received=1 packet-loss=0');
+ expect(formatPing([{host:'8.8.8.8',size:'56',ttl:'117',time:'21ms',status:undefined,sent:'1',received:'1','packet-loss':'0'}])).toContain('sent=1 received=1 packet-loss=0%');
  expect(helpText()).toContain('/ip hotspot active');
 });

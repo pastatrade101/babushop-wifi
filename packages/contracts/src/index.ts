@@ -68,7 +68,9 @@ export const NetworkAuditList=T.Object({items:T.Array(T.Object({id:Id,actor:T.Un
 // Router console. Rows are RouterOS's own strings, already stripped of secrets
 // and voucher codes by the console module; the schema pins every value to a string.
 export const RouterMenuParams=T.Object({menu:T.String({pattern:'^[a-z0-9-]{1,40}$'})},{additionalProperties:false});
-export const RouterMenus=T.Object({groups:T.Array(T.Object({group:T.String(),items:T.Array(T.Object({id:T.String(),label:T.String(),live:T.Boolean(),single:T.Boolean()},{additionalProperties:false}))},{additionalProperties:false}))},{additionalProperties:false});
+const RouterTab=T.Object({id:T.String(),label:T.String(),live:T.Boolean(),single:T.Boolean()},{additionalProperties:false});
+const RouterWindow=T.Object({id:T.String(),title:T.String(),icon:T.String(),tabs:T.Array(RouterTab)},{additionalProperties:false});
+export const RouterMenus=T.Object({nav:T.Array(T.Object({label:T.String(),icon:T.String(),window:T.Optional(RouterWindow),windows:T.Optional(T.Array(RouterWindow))},{additionalProperties:false}))},{additionalProperties:false});
 export const RouterMenuRows=T.Object({menu:T.Object({id:T.String(),label:T.String(),group:T.String(),single:T.Boolean(),live:T.Boolean()},{additionalProperties:false}),columns:T.Array(T.String()),items:T.Array(T.Record(T.String(),T.String())),count:T.Integer(),truncated:T.Boolean(),error:T.Union([T.String(),T.Null()]),read_at:T.String()},{additionalProperties:false});
 export const RouterOverview=Nested;
 export const RouterCommandInput=T.Object({command:T.String({maxLength:200})},{additionalProperties:false});

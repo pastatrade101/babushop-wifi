@@ -18,6 +18,8 @@ export const load=async(event:any)=>{
   api(event,'/network/router/overview').catch(failed),
   // The terminal has no list to load; it talks through the action below.
   menu==='terminal'?Promise.resolve({terminal:true}):
+  // Every window closed: WinBox's empty workspace.
+  menu==='none'?Promise.resolve({none:true}):
   /^[a-z0-9-]{1,40}$/.test(menu)?api(event,'/network/router/menus/'+menu).catch(failed):Promise.resolve({error:'Unknown router menu'}),
  ]);
  return {menus,overview,view,menu};

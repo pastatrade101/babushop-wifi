@@ -19,63 +19,63 @@ const m=(group:string,id:string,label:string,path:ReadPath,columns:string[],extr
 
 // WinBox's order and names, so the page is where an operator expects it to be.
 export const MENUS:Menu[]=[
- m('Interfaces','interfaces','Interface list','interface',['name','type','actual-mtu','mac-address','rx-byte','tx-byte','link-downs','comment'],{live:true}),
+ m('Interfaces','interfaces','Interface','interface',['name','type','actual-mtu','l2mtu','mac-address','tx-byte','rx-byte','link-downs','comment'],{live:true}),
  m('Interfaces','ethernet','Ethernet','interface/ethernet',['name','default-name','mac-address','speed','auto-negotiation','comment']),
- m('Interfaces','interface-lists','Interface lists','interface/list',['name','include','exclude','comment']),
- m('Interfaces','interface-list-members','List members','interface/list/member',['list','interface','comment']),
+ m('Interfaces','interface-lists','Interface List','interface/list',['name','include','exclude','comment']),
+ m('Interfaces','interface-list-members','List Members','interface/list/member',['list','interface','comment']),
  m('Interfaces','vlans','VLAN','interface/vlan',['name','vlan-id','interface','mtu','comment']),
  m('Interfaces','wireguard','WireGuard','interface/wireguard',['name','listen-port','mtu','public-key','comment']),
- m('Interfaces','wireguard-peers','WireGuard peers','interface/wireguard/peers',['interface','allowed-address','endpoint-address','endpoint-port','last-handshake','rx','tx','comment'],{live:true}),
- m('Interfaces','wifi','Wi-Fi','interface/wifi',['name','configuration.ssid','mac-address','channel','comment']),
- m('Interfaces','wireless','Wireless','interface/wireless',['name','ssid','mode','band','frequency','mac-address','comment']),
+ m('Interfaces','wireguard-peers','Peers','interface/wireguard/peers',['interface','allowed-address','endpoint-address','endpoint-port','last-handshake','rx','tx','comment'],{live:true}),
+ m('Interfaces','wifi','WiFi','interface/wifi',['name','configuration.ssid','mac-address','channel','comment']),
+ m('Interfaces','wireless','Wireless (legacy)','interface/wireless',['name','ssid','mode','band','frequency','mac-address','comment']),
  m('Bridge','bridges','Bridge','interface/bridge',['name','mtu','mac-address','protocol-mode','vlan-filtering','comment']),
  m('Bridge','bridge-ports','Ports','interface/bridge/port',['interface','bridge','pvid','horizon','hw','comment']),
  m('IP','addresses','Addresses','ip/address',['address','network','interface','comment']),
  m('IP','arp','ARP','ip/arp',['address','mac-address','interface','status','comment'],{live:true}),
- m('IP','dhcp-client','DHCP client','ip/dhcp-client',['interface','status','address','gateway','primary-dns','comment'],{live:true}),
- m('IP','dhcp-server','DHCP server','ip/dhcp-server',['name','interface','address-pool','lease-time','comment']),
- m('IP','dhcp-leases','DHCP leases','ip/dhcp-server/lease',['address','mac-address','host-name','server','status','last-seen','expires-after','comment'],{live:true}),
- m('IP','dhcp-networks','DHCP networks','ip/dhcp-server/network',['address','gateway','dns-server','comment']),
- m('IP','dns','DNS','ip/dns',[],{single:true}),
- m('IP','dns-static','DNS static','ip/dns/static',['name','address','type','ttl','comment']),
- m('IP','pools','Pool','ip/pool',['name','ranges','next-pool','comment']),
+ m('IP','dhcp-client','DHCP Client','ip/dhcp-client',['interface','status','address','gateway','primary-dns','comment'],{live:true}),
+ m('IP','dhcp-server','DHCP','ip/dhcp-server',['name','interface','address-pool','lease-time','comment']),
+ m('IP','dhcp-leases','Leases','ip/dhcp-server/lease',['address','mac-address','host-name','server','status','last-seen','expires-after','comment'],{live:true}),
+ m('IP','dhcp-networks','Networks','ip/dhcp-server/network',['address','gateway','dns-server','comment']),
+ m('IP','dns','Settings','ip/dns',[],{single:true}),
+ m('IP','dns-static','Static','ip/dns/static',['name','address','type','ttl','comment']),
+ m('IP','pools','Pools','ip/pool',['name','ranges','next-pool','comment']),
  m('IP','routes','Routes','ip/route',['dst-address','gateway','immediate-gw','distance','routing-table','comment']),
  m('IP','services','Services','ip/service',['name','port','address','certificate']),
  m('IP','neighbors','Neighbors','ip/neighbor',['interface','address','mac-address','identity','platform','version','board'],{live:true}),
  m('IP','cloud','Cloud','ip/cloud',[],{single:true}),
- m('Firewall','firewall-filter','Filter rules','ip/firewall/filter',['chain','action','protocol','src-address','dst-address','in-interface','out-interface','dst-port','connection-state','bytes','packets','comment']),
+ m('Firewall','firewall-filter','Filter Rules','ip/firewall/filter',['chain','action','protocol','src-address','dst-address','in-interface','out-interface','dst-port','connection-state','bytes','packets','comment']),
  m('Firewall','firewall-nat','NAT','ip/firewall/nat',['chain','action','protocol','src-address','dst-address','out-interface','dst-port','to-addresses','to-ports','bytes','comment']),
  m('Firewall','firewall-mangle','Mangle','ip/firewall/mangle',['chain','action','protocol','new-connection-mark','new-packet-mark','passthrough','bytes','comment']),
- m('Firewall','address-lists','Address lists','ip/firewall/address-list',['list','address','creation-time','timeout','comment']),
+ m('Firewall','address-lists','Address Lists','ip/firewall/address-list',['list','address','creation-time','timeout','comment']),
  m('Hotspot','hotspot-active','Active','ip/hotspot/active',['user','address','mac-address','uptime','session-time-left','idle-time','bytes-in','bytes-out','login-by'],{live:true}),
  m('Hotspot','hotspot-hosts','Hosts','ip/hotspot/host',['mac-address','address','to-address','server','authorized','bypassed','idle-time','uptime','bytes-in','bytes-out'],{live:true}),
  m('Hotspot','hotspot-servers','Servers','ip/hotspot',['name','interface','address-pool','profile','idle-timeout','addresses-per-mac']),
- m('Hotspot','hotspot-profiles','Server profiles','ip/hotspot/profile',['name','hotspot-address','dns-name','html-directory','login-by','use-radius','rate-limit']),
+ m('Hotspot','hotspot-profiles','Server Profiles','ip/hotspot/profile',['name','hotspot-address','dns-name','html-directory','login-by','use-radius','rate-limit']),
  m('Hotspot','hotspot-users','Users','ip/hotspot/user',['name','profile','server','limit-uptime','uptime','bytes-in','bytes-out','comment']),
- m('Hotspot','hotspot-user-profiles','User profiles','ip/hotspot/user/profile',['name','shared-users','rate-limit','session-timeout','idle-timeout','keepalive-timeout']),
- m('Hotspot','hotspot-bindings','IP bindings','ip/hotspot/ip-binding',['mac-address','address','to-address','server','type','comment']),
- m('Hotspot','walled-garden','Walled garden','ip/hotspot/walled-garden',['action','dst-host','dst-port','server','comment']),
- m('Hotspot','walled-garden-ip','Walled garden IP','ip/hotspot/walled-garden/ip',['action','dst-address','dst-host','protocol','dst-port','comment']),
+ m('Hotspot','hotspot-user-profiles','User Profiles','ip/hotspot/user/profile',['name','shared-users','rate-limit','session-timeout','idle-timeout','keepalive-timeout']),
+ m('Hotspot','hotspot-bindings','IP Bindings','ip/hotspot/ip-binding',['mac-address','address','to-address','server','type','comment']),
+ m('Hotspot','walled-garden','Walled Garden','ip/hotspot/walled-garden',['action','dst-host','dst-port','server','comment']),
+ m('Hotspot','walled-garden-ip','Walled Garden IP List','ip/hotspot/walled-garden/ip',['action','dst-address','dst-host','protocol','dst-port','comment']),
  m('Hotspot','hotspot-cookies','Cookies','ip/hotspot/cookie',['user','mac-address','domain','expires-in']),
- m('Queues','simple-queues','Simple queues','queue/simple',['name','target','max-limit','limit-at','rate','bytes','comment'],{live:true}),
- m('Queues','queue-tree','Queue tree','queue/tree',['name','parent','packet-mark','max-limit','limit-at','rate','comment'],{live:true}),
- m('Queues','queue-types','Queue types','queue/type',['name','kind']),
+ m('Queues','simple-queues','Simple Queues','queue/simple',['name','target','max-limit','limit-at','rate','bytes','comment'],{live:true}),
+ m('Queues','queue-tree','Queue Tree','queue/tree',['name','parent','packet-mark','max-limit','limit-at','rate','comment'],{live:true}),
+ m('Queues','queue-types','Queue Types','queue/type',['name','kind']),
  m('System','resources','Resources','system/resource',[],{single:true,live:true}),
  m('System','identity','Identity','system/identity',[],{single:true}),
  m('System','clock','Clock','system/clock',[],{single:true,live:true}),
  m('System','routerboard','RouterBOARD','system/routerboard',[],{single:true}),
- m('System','device-mode','Device mode','system/device-mode',[],{single:true}),
+ m('System','device-mode','Device Mode','system/device-mode',[],{single:true}),
  m('System','health','Health','system/health',['name','value','type'],{live:true}),
  m('System','packages','Packages','system/package',['name','version','build-time','scheduled']),
  m('System','license','License','system/license',[],{single:true}),
- m('System','ntp-client','NTP client','system/ntp/client',[],{single:true}),
+ m('System','ntp-client','NTP Client','system/ntp/client',[],{single:true}),
  m('System','scheduler','Scheduler','system/scheduler',['name','start-date','start-time','interval','next-run','run-count','comment']),
  m('System','users','Users','user',['name','group','address','last-logged-in','comment']),
- m('System','active-users','Active users','user/active',['name','when','address','via','group'],{live:true}),
- m('System','user-groups','User groups','user/group',['name','policy']),
+ m('System','active-users','Active Users','user/active',['name','when','address','via','group'],{live:true}),
+ m('System','user-groups','Groups','user/group',['name','policy']),
  // Names, sizes and dates only. A file's contents never leave the router:
  // backups and exports are exactly where its passwords are written down.
- m('Files','files','File list','file',['name','type','size','last-modified','creation-time']),
+ m('Files','files','Files','file',['name','type','size','last-modified','creation-time']),
  m('Log','log','Log','log',['time','topics','message'],{live:true}),
  m('RADIUS','radius','RADIUS','radius',['service','address','protocol','authentication-port','accounting-port','timeout','comment']),
  m('RADIUS','radius-incoming','Incoming','radius/incoming',[],{single:true}),
@@ -85,9 +85,63 @@ export const MENUS:Menu[]=[
 export const GROUPS=[...new Set(MENUS.map(item=>item.group))];
 export const menuById=(id:string)=>MENUS.find(item=>item.id===id)??null;
 
-/** What the browser needs to draw the menu tree. No paths. The terminal is last, where WinBox keeps "New Terminal". */
-export const menuTree=()=>[...GROUPS.map(group=>({group,items:MENUS.filter(item=>item.group===group).map(({id,label,live,single})=>({id,label,live:!!live,single:!!single}))})),
- {group:'Terminal',items:[{id:'terminal',label:'New terminal',live:false,single:false}]}];
+// WinBox's left-hand menu: a window per entry, with its lists as tabs, and the
+// IP, System and Tools folders opening into submenus. Icons are names from the
+// portal's own icon set, so nothing here is a path or a command.
+export type NavWindow={id:string;title:string;icon:string;tabs:string[]};
+export type NavEntry={label:string;icon:string;window?:NavWindow;windows?:NavWindow[]};
+const win=(id:string,title:string,icon:string,tabs:string[]):NavWindow=>({id,title,icon,tabs});
+export const TERMINAL='terminal';
+export const NAV:NavEntry[]=[
+ {label:'WiFi',icon:'wifi',window:win('wifi','WiFi','wifi',['wifi','wireless'])},
+ {label:'Interfaces',icon:'ethernet',window:win('interfaces','Interface List','ethernet',['interfaces','interface-lists','interface-list-members','ethernet','vlans'])},
+ {label:'WireGuard',icon:'tunnel',window:win('wireguard','WireGuard','tunnel',['wireguard','wireguard-peers'])},
+ {label:'Bridge',icon:'bridge',window:win('bridge','Bridge','bridge',['bridges','bridge-ports'])},
+ {label:'IP',icon:'ip',windows:[
+  win('addresses','Address List','ip',['addresses']),
+  win('arp','ARP List','ip',['arp']),
+  win('cloud','Cloud','ip',['cloud']),
+  win('dhcp-client','DHCP Client','ip',['dhcp-client']),
+  win('dhcp-server','DHCP Server','ip',['dhcp-server','dhcp-networks','dhcp-leases']),
+  win('dns','DNS','ip',['dns','dns-static']),
+  win('firewall','Firewall','firewall',['firewall-filter','firewall-nat','firewall-mangle','address-lists']),
+  win('hotspot','Hotspot','hotspot',['hotspot-servers','hotspot-profiles','hotspot-users','hotspot-user-profiles','hotspot-active','hotspot-hosts','hotspot-bindings','walled-garden','walled-garden-ip','hotspot-cookies']),
+  win('neighbors','Neighbor List','ip',['neighbors']),
+  win('pools','IP Pool','ip',['pools']),
+  win('routes','Route List','ip',['routes']),
+  win('services','IP Service List','ip',['services']),
+ ]},
+ {label:'System',icon:'settings',windows:[
+  win('clock','Clock','settings',['clock']),
+  win('device-mode','Device Mode','settings',['device-mode']),
+  win('health','Health','settings',['health']),
+  win('identity','Identity','settings',['identity']),
+  win('license','License','settings',['license']),
+  win('ntp-client','NTP Client','settings',['ntp-client']),
+  win('packages','Package List','settings',['packages']),
+  win('resources','Resources','settings',['resources']),
+  win('routerboard','RouterBOARD','settings',['routerboard']),
+  win('scheduler','Scheduler','settings',['scheduler']),
+  win('users','Users','settings',['users','user-groups','active-users']),
+ ]},
+ {label:'Queues',icon:'queues',window:win('queues','Queue List','queues',['simple-queues','queue-tree','queue-types'])},
+ {label:'Files',icon:'folder',window:win('files','File List','folder',['files'])},
+ {label:'Log',icon:'log',window:win('log','Log','log',['log'])},
+ {label:'New Terminal',icon:'terminal',window:win(TERMINAL,'Terminal','terminal',[TERMINAL])},
+ {label:'RADIUS',icon:'key',window:win('radius','RADIUS','key',['radius','radius-incoming'])},
+ {label:'Tools',icon:'tools',windows:[win('netwatch','Netwatch','tools',['netwatch'])]},
+];
+
+const tab=(id:string)=>{
+ if(id===TERMINAL)return {id,label:'Terminal',live:false,single:false};
+ const {label,live,single}=menuById(id)!;
+ return {id,label,live:!!live,single:!!single};
+};
+const expand=(w:NavWindow)=>({id:w.id,title:w.title,icon:w.icon,tabs:w.tabs.map(tab)});
+
+/** What the browser needs to draw WinBox's menu. Ids, labels and icon names; no paths. */
+type TabView=ReturnType<typeof tab>;type WindowView={id:string;title:string;icon:string;tabs:TabView[]};
+export const menuTree=():{label:string;icon:string;window?:WindowView;windows?:WindowView[]}[]=>NAV.map(entry=>({label:entry.label,icon:entry.icon,...(entry.window?{window:expand(entry.window)}:{windows:entry.windows!.map(expand)})}));
 
 // ── Redaction ────────────────────────────────────────────────────────────────
 
@@ -234,7 +288,7 @@ export function formatPing(replies:Record<string,string|undefined>[]):string{
  const rows=replies.filter(r=>r.host||r.status);
  const lines=rows.map((r,i)=>`${pad(String(i),5)}${pad(r.host??'',17)}${pad(r.size??'',6)}${pad(r.ttl??'',5)}${pad(r.time??'',9)}${r.status??''}`.trimEnd());
  const last=replies[replies.length-1]??{};
- const summary=last.sent?`    sent=${last.sent} received=${last.received??0} packet-loss=${last['packet-loss']??'?'}${last['avg-rtt']?` avg-rtt=${last['avg-rtt']}`:''}`:'';
+ const summary=last.sent?`    sent=${last.sent} received=${last.received??0} packet-loss=${last['packet-loss']??'?'}${/^\d+$/.test(last['packet-loss']??'')?'%':''}${last['avg-rtt']?` avg-rtt=${last['avg-rtt']}`:''}`:'';
  return [`${pad('SEQ',5)}${pad('HOST',17)}${pad('SIZE',6)}${pad('TTL',5)}${pad('TIME',9)}STATUS`,...lines,summary].filter(Boolean).join('\n');
 }
 
