@@ -39,7 +39,7 @@ $effect(()=>{const f=currentFolder;if(f)untrack(()=>{if(!folders[f])folders[f]=t
 const units=['B','KiB','MiB','GiB','TiB'];
 function bytes(n:number){let i=0;while(n>=1024&&i<units.length-1){n/=1024;i++;}return (i?n.toFixed(n<10?1:0):String(n))+' '+units[i];}
 function bps(n:number){if(n<1000)return Math.round(n)+' bps';const u=['kbps','Mbps','Gbps'];let i=-1;while(n>=1000&&i<u.length-1){n/=1000;i++;}return n.toFixed(1)+' '+u[i];}
-const isBytes=(key:string)=>/(^|-)(bytes?|byte)(-|$)|^(rx|tx)$|memory$|hdd-space$/.test(key);
+const isBytes=(key:string)=>/(^|-)(bytes?|byte)(-|$)|^(rx|tx|size)$|memory$|hdd-space$/.test(key);
 function show(key:string,value:string|undefined){
  if(value===undefined||value==='')return '';
  if(value==='true')return 'yes';
@@ -102,7 +102,7 @@ let finding=$state(false);
 let open=$state<string|null>(null);
 let sortKey=$state<string|null>(null);
 let sortDir=$state<1|-1>(1);
-$effect(()=>{menuId;untrack(()=>{query='';open=null;sortKey=null;sortDir=1;});});
+$effect(()=>{menuId;untrack(()=>{query='';open=null;sortKey=null;sortDir=1;uploading=false;upMessage=null;picked=null;saveAs='';});});
 function sortBy(col:string){if(sortKey===col)sortDir=sortDir===1?-1:1;else{sortKey=col;sortDir=1;}}
 const rows=$derived.by(()=>{
  const items=((view?.items??[]) as Row[]).map((row,index)=>({row,index}));
@@ -120,6 +120,64 @@ const rows=$derived.by(()=>{
 const rowKey=(row:Row,i:number)=>row['.id']??String(i);
 const selected=$derived(open?((view?.items??[]) as Row[]).find((r,i)=>rowKey(r,i)===open)??null:null);
 const itemTitle=(row:Row)=>row.name||row.address||row['dst-address']||row['mac-address']||row.list||row.chain||'Item';
+
+// ── Hotspot uploads (Files window) ─────────────────────────────────────────
+// The portal's one write to the router. The panel says exactly what an upload
+// will do before it is sent; the server keeps whatever it replaces.
+type Capability={enabled:boolean;directory:string|null;types:string[];max_bytes:number};
+const files=$derived(data.files as Capability|null);
+const uploadDir=$derived(files?.enabled&&files.directory?files.directory:null);
+let uploading=$state(false);
+let upBusy=$state(false);
+let upMessage=$state<{ok:boolean;text:string}|null>(null);
+let picked=$state<{name:string;size:number}|null>(null);
+let saveAs=$state('');
+const target=$derived(uploadDir&&saveAs.trim()?`${uploadDir}/${saveAs.trim().replace(/^\/+/,'')}`:null);
+const existing=$derived(target?((view?.items??[]) as Row[]).find(r=>r.name===target)??null:null);
+// The pages RouterOS shows customers on their way online.
+const customerPage=$derived(/^(login|alogin|status|logout|error|redirect|rlogin|flogin|flogout|radvert)\.html?$/i.test(saveAs.trim()));
+function pick(e:Event){const f=(e.currentTarget as HTMLInputElement).files?.[0];picked=f?{name:f.name,size:f.size}:null;if(f)saveAs=f.name;upMessage=null;}
+const upload:SubmitFunction=({cancel})=>{
+ if(!picked){upMessage={ok:false,text:'Choose a file first.'};cancel();return;}
+ if(files&&picked.size>files.max_bytes){upMessage={ok:false,text:`The file is ${Math.ceil(picked.size/1024)} KB; the router accepts at most 60 KB.`};cancel();return;}
+ upBusy=true;upMessage=null;
+ return async({result,update})=>{
+  upBusy=false;
+  const d=(result as any).data?.upload;
+  if(result.type==='success'){upMessage={ok:true,text:d?.message??'Uploaded.'};picked=null;saveAs='';history=null;await update({reset:true});}
+  else if(result.type==='failure')upMessage={ok:false,text:d?.message??'Upload failed.'};
+  else if(result.type==='redirect')goto(result.location);
+  else upMessage={ok:false,text:'Upload failed.'};
+ };
+};
+
+// History of a hotspot file: every version the portal saved, newest first.
+type Version={id:string;reason:string;size:number;created_at:string;created_by:string|null};
+const REASONS:Record<string,string>={BEFORE_UPLOAD:'Replaced by an upload',UPLOADED:'Uploaded',BEFORE_RESTORE:'Replaced by a restore',RESTORED:'Restored'};
+let history=$state<{name:string;loading:boolean;items:Version[];error?:string}|null>(null);
+let confirming=$state<string|null>(null);
+let restoreMessage=$state<{ok:boolean;text:string}|null>(null);
+const inHotspot=(row:Row|null)=>!!(row&&files?.directory&&row.type!=='directory'&&row.name?.startsWith(files.directory+'/'));
+const when=(iso:string)=>new Intl.DateTimeFormat('en-GB',{dateStyle:'medium',timeStyle:'short',timeZone:'Africa/Dar_es_Salaam'}).format(new Date(iso));
+async function loadHistory(name:string){
+ history={name,loading:true,items:[]};restoreMessage=null;confirming=null;
+ try{const r=await fetch('/router/versions?name='+encodeURIComponent(name));if(!r.ok)throw new Error('Could not load the history.');history={name,loading:false,items:(await r.json()).items};}
+ catch(e){history={name,loading:false,items:[],error:(e as Error).message};}
+}
+const selectedName=$derived(selected?.name??null);
+$effect(()=>{const n=selectedName;untrack(()=>{if(history&&history.name!==n){history=null;confirming=null;restoreMessage=null;}});});
+const restore:SubmitFunction=({formData,cancel})=>{
+ const id=String(formData.get('id'));
+ // Two clicks: the first arms the button, the second restores.
+ if(confirming!==id){confirming=id;cancel();return;}
+ confirming=null;
+ return async({result,update})=>{
+  const d=(result as any).data?.restore;
+  restoreMessage={ok:result.type==='success',text:d?.message??(result.type==='success'?'Restored.':'Restore failed.')};
+  if(result.type==='success'){const name=history?.name;await update();if(name)loadHistory(name);}
+  else if(result.type==='redirect')goto(result.location);
+ };
+};
 
 // ── Live refresh ───────────────────────────────────────────────────────────
 // On by default for lists that change by the second. Paused while the tab is
@@ -255,7 +313,13 @@ function recall(e:KeyboardEvent){
 
      {#if !isTerminal}
       <div class="win-toolbar">
-       <span class="ro" title="The portal cannot change the router. Changes still go through WinBox."><Icon name="lock" size={14}/>Read-only</span>
+       {#if menuId==='files'&&uploadDir}
+        <span class="rw" title="In this window the portal can put text files into the hotspot folder. Everything else stays read-only."><Icon name="alert" size={14}/>Hotspot uploads on</span>
+        <button type="button" class="tool-button" class:on={uploading} aria-pressed={uploading} onclick={()=>{uploading=!uploading;open=null;upMessage=null;}}><Icon name="plus" size={14}/>Upload to {uploadDir}/</button>
+       {:else}
+        <span class="ro" title="The portal cannot change the router. Changes still go through WinBox."><Icon name="lock" size={14}/>Read-only</span>
+        {#if menuId==='files'&&files&&!files.enabled}<span class="muted-note" title="Create the portal-files account on the router and add its username and password to the server to turn uploads on.">Uploads not set up</span>{/if}
+       {/if}
        {#if finding}<input type="search" placeholder="Find…" aria-label="Find in this list" bind:value={query}>{/if}
        <span class="spacer"></span>
        {#if view?.items&&!currentTab?.single}<span class="count" title="Selected (total)"><Icon name="check" size={14}/>{selected?1:0} ({query?rows.length+' of '+view.count:view.count}){#if view.truncated} · newest {view.count}{/if}</span>{/if}
@@ -263,7 +327,7 @@ function recall(e:KeyboardEvent){
       </div>
      {/if}
 
-     <div class="win-body" class:split={!!selected}>
+     <div class="win-body" class:split={!!selected||(uploading&&!!uploadDir)}>
       {#if isTerminal}
        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
        <div class="terminal" onclick={()=>input?.focus()}>
@@ -307,10 +371,47 @@ function recall(e:KeyboardEvent){
          </tbody>
         </table>
        </div>
-       {#if selected}
+       {#if uploading&&uploadDir&&files}
+        <aside class="detail" aria-label="Upload a hotspot page">
+         <div class="detail-head"><strong>Upload to {uploadDir}/</strong><button type="button" aria-label="Close upload" onclick={()=>uploading=false}><Icon name="close" size={15}/></button></div>
+         <form method="POST" action="?/upload" enctype="multipart/form-data" use:enhance={upload} class="upload-form">
+          <label>File<input type="file" name="file" accept={files.types.map(t=>'.'+t).join(',')} onchange={pick}></label>
+          <label>Save as<input name="name" bind:value={saveAs} placeholder="login.html" autocomplete="off" spellcheck="false"><small>{uploadDir}/{saveAs||'…'}</small></label>
+          {#if picked&&target}
+           <p class="impact">{#if existing}Replaces <strong>{target}</strong> ({bytes(Number(existing.size||0))}{existing['last-modified']?', changed '+existing['last-modified']:''}). The current file is saved first and can be put back from its History.{:else}Creates <strong>{target}</strong>.{/if}</p>
+           {#if customerPage}<p class="impact warn">Customers see this page when they connect. Open it in a browser and check it before uploading.</p>{/if}
+          {/if}
+          <button class="small-button" disabled={!picked||upBusy}>{upBusy?'Uploading…':existing?'Replace file':'Upload file'}</button>
+         </form>
+         {#if upMessage}<p class="result" class:ok={upMessage.ok} role="status">{upMessage.text}</p>{/if}
+         <p class="note">{files.types.map(t=>'.'+t).join(' ')} files up to 60 KB, into this folder only. Every upload is recorded with your name.</p>
+        </aside>
+       {:else if selected}
         <aside class="detail" aria-label="Item details">
          <div class="detail-head"><strong>{itemTitle(selected)}</strong><button type="button" aria-label="Close details" onclick={()=>open=null}><Icon name="close" size={15}/></button></div>
          <dl class="record">{#each Object.entries(selected).filter(([k])=>!k.startsWith('.')||k==='.id') as [key,value] (key)}<dt>{heading(key)}</dt><dd>{show(key,value)||'—'}</dd>{/each}</dl>
+         {#if inHotspot(selected)}
+          {@const name=selected.name}
+          <div class="history">
+           <div class="history-head"><strong>History</strong>{#if history?.name!==name}<button type="button" class="link-button" onclick={()=>loadHistory(name)}>Show versions</button>{/if}</div>
+           {#if history?.name===name}
+            {#if history.loading}<p class="note">Loading…</p>
+            {:else if history.error}<p class="result">{history.error}</p>
+            {:else if !history.items.length}<p class="note">No versions saved yet. The first upload keeps a copy of the file that is there now.</p>
+            {:else}
+             <ul>
+              {#each history.items as v (v.id)}
+               <li>
+                <div><span>{REASONS[v.reason]??v.reason}</span><small>{when(v.created_at)} · {bytes(v.size)}{v.created_by?' · '+v.created_by:''}</small></div>
+                {#if uploadDir}<form method="POST" action="?/restore" use:enhance={restore}><input type="hidden" name="id" value={v.id}><button class="small-button" class:arm={confirming===v.id}>{confirming===v.id?'Confirm restore':'Restore'}</button></form>{/if}
+               </li>
+              {/each}
+             </ul>
+            {/if}
+            {#if restoreMessage}<p class="result" class:ok={restoreMessage.ok} role="status">{restoreMessage.text}</p>{/if}
+           {/if}
+          </div>
+         {/if}
         </aside>
        {/if}
       {/if}
@@ -417,6 +518,31 @@ function recall(e:KeyboardEvent){
  .record dt{color:var(--muted);text-align:right;padding:6px 10px 6px 14px;border-bottom:1px solid var(--surface-muted)}
  .record dd{margin:0;padding:6px 14px 6px 4px;overflow-wrap:anywhere;color:var(--ink);border-bottom:1px solid var(--surface-muted)}
  .detail .record{grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr)}
+
+ /* Hotspot uploads: the one place this page can change the router, so it looks different. */
+ .rw{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:var(--warning);font-weight:600}
+ .tool-button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:6px;padding:4px 10px;font-size:.78rem;cursor:pointer;min-height:0}
+ .tool-button:hover,.tool-button.on{background:var(--warning-soft);border-color:var(--warning)}
+ .muted-note{color:var(--muted)}
+ .upload-form{display:flex;flex-direction:column;gap:10px;padding:12px 14px 4px}
+ .upload-form label{margin:0;font-size:.8rem;gap:5px}
+ .upload-form label small{color:var(--muted);font-weight:400;overflow-wrap:anywhere}
+ .upload-form input{min-height:36px;padding:6px 10px;font-size:.82rem}
+ .upload-form .small-button{align-self:flex-start}
+ .impact{margin:0;font-size:.78rem;background:var(--surface-muted);border-radius:6px;padding:8px 10px;color:var(--ink)}
+ .impact.warn{background:var(--warning-soft);color:var(--warning)}
+ .result{margin:8px 14px;font-size:.8rem;color:var(--danger)}
+ .result.ok{color:var(--success)}
+ .note{margin:8px 14px 12px;font-size:.74rem;color:var(--muted)}
+ .history{border-top:1px solid var(--line);margin-top:6px}
+ .history-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px 4px;font-size:.82rem}
+ .link-button{background:none;border:0;color:var(--primary-text);cursor:pointer;font-size:.78rem;padding:0;min-height:0}
+ .history ul{list-style:none;margin:0;padding:0 8px 8px}
+ .history li{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 6px;border-bottom:1px solid var(--surface-muted);font-size:.78rem}
+ .history li div{display:flex;flex-direction:column;min-width:0}
+ .history li small{color:var(--muted);font-size:.7rem}
+ .history .small-button{padding:4px 9px;font-size:.74rem;min-height:0}
+ .history .small-button.arm{background:var(--warning-soft);border-color:var(--warning);color:var(--warning)}
 
  /* The terminal is dark in both themes, as WinBox's is. */
  .terminal{background:#0b1220;padding:12px 14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.8rem;color:#e5e7eb;cursor:text;display:flex;flex-direction:column;min-height:0}

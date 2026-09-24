@@ -73,6 +73,13 @@ const RouterWindow=T.Object({id:T.String(),title:T.String(),icon:T.String(),tabs
 export const RouterMenus=T.Object({nav:T.Array(T.Object({label:T.String(),icon:T.String(),window:T.Optional(RouterWindow),windows:T.Optional(T.Array(RouterWindow))},{additionalProperties:false}))},{additionalProperties:false});
 export const RouterMenuRows=T.Object({menu:T.Object({id:T.String(),label:T.String(),group:T.String(),single:T.Boolean(),live:T.Boolean()},{additionalProperties:false}),columns:T.Array(T.String()),items:T.Array(T.Record(T.String(),T.String())),count:T.Integer(),truncated:T.Boolean(),error:T.Union([T.String(),T.Null()]),read_at:T.String()},{additionalProperties:false});
 export const RouterOverview=Nested;
+// Hotspot page uploads: the only router write. Names are relative to the
+// hotspot folder and checked again on the server; contents are text.
+export const RouterFileCapability=T.Object({enabled:T.Boolean(),directory:T.Union([T.String(),T.Null()]),types:T.Array(T.String()),max_bytes:T.Integer()},{additionalProperties:false});
+export const RouterFileUpload=T.Object({name:T.String({minLength:1,maxLength:130}),contents:T.String({maxLength:70000})},{additionalProperties:false});
+export const RouterFileResult=T.Object({name:T.String(),size:T.Integer(),sha256:T.String(),replaced:T.Boolean(),version_id:Id},{additionalProperties:false});
+export const RouterFileVersionsQuery=T.Object({name:T.String({maxLength:200})},{additionalProperties:false});
+export const RouterFileVersions=T.Object({items:T.Array(T.Object({id:Id,name:T.String(),reason:T.String(),size:T.Integer(),sha256:T.String(),created_at:T.String(),created_by:T.Union([T.String(),T.Null()])},{additionalProperties:false}))},{additionalProperties:false});
 export const RouterCommandInput=T.Object({command:T.String({maxLength:200})},{additionalProperties:false});
 export const RouterCommandOutput=T.Object({ok:T.Boolean(),output:T.String()},{additionalProperties:false});
 export const ApprovalInput=T.Object({approved:T.Boolean()},{additionalProperties:false});

@@ -1,11 +1,14 @@
 import * as network from '../../../packages/database/src/network.ts';
+import * as routerFiles from '../../../packages/database/src/router-files.ts';
 import * as S from '../../../packages/contracts/src/index.ts';
 
 // Remote site access, Phases 1-4.
 //
-// Every route is administrator-only and every one of them is a read on the
-// router. There is intentionally no apply or rollback endpoint yet: the planner
-// produces a document for review, and nothing in this file can change a router.
+// Every route is administrator-only. All but one are reads on the router: the
+// exception is hotspot page uploads, which write text files into the hotspot's
+// own folder on a separate account, keeping each file they replace. There is
+// intentionally no apply endpoint for the tunnel plan: the planner produces a
+// document for review.
 //
 // No route makes the server connect anywhere a browser chose. Targets are named
 // by database id and resolved server-side, which is what keeps the management
@@ -47,4 +50,12 @@ export function registerNetwork(route:Route){
  // The read-only terminal: print, ping and help, parsed server-side. Slower
  // limit than the menus, because a ping holds the router for seconds.
  route('POST','/network/router/terminal',S.RouterCommandInput,S.RouterCommandOutput,async(r:any)=>network.routerCommand(r.staff,r.body.command),true,{config:{rateLimit:{max:30,timeWindow:'1 minute'}}});
+
+ // Hotspot pages: the portal's one write to the router, on its own account.
+ // Each upload keeps the file it replaces and is checked by reading it back.
+ // A 60 KB page grows when JSON-escaped, so this one route takes a larger body.
+ route('GET','/network/router/files/capability',undefined,S.RouterFileCapability,async()=>routerFiles.fileCapability(),true);
+ route('POST','/network/router/files',S.RouterFileUpload,S.RouterFileResult,async(r:any)=>routerFiles.uploadHotspotFile(r.staff,r.body.name,r.body.contents),true,{bodyLimit:262144,config:{rateLimit:{max:12,timeWindow:'1 minute'}}});
+ route('GET','/network/router/files/versions',undefined,S.RouterFileVersions,async(r:any)=>routerFiles.fileVersions(r.query.name),true,{schema:{querystring:S.RouterFileVersionsQuery}});
+ route('POST','/network/router/files/versions/:id/restore',undefined,S.RouterFileResult,async(r:any)=>routerFiles.restoreFileVersion(r.staff,r.params.id),true,{schema:{params:S.Params},config:{rateLimit:{max:12,timeWindow:'1 minute'}}});
 }
