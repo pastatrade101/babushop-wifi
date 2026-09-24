@@ -36,4 +36,10 @@ export function registerNetwork(route:Route){
 
  route('PATCH','/network/sites/:id/preflight',S.PreflightInput,S.NetworkSiteRow,async(r:any)=>network.setPreflight(r.staff,r.params.id,r.body),true,params);
  route('PATCH','/network/sites/:id/omada',S.OmadaUrlInput,S.NetworkSiteRow,async(r:any)=>network.setOmadaUrl(r.staff,r.params.id,r.body.url),true,params);
+
+ // Router console: WinBox's menus, read-only. Refreshing a live menu every few
+ // seconds is the point of it, so the limit is generous; each call is one GET.
+ route('GET','/network/router/menus',undefined,S.RouterMenus,async()=>network.routerMenus(),true);
+ route('GET','/network/router/overview',undefined,S.RouterOverview,async()=>network.routerOverview(),true,{config:{rateLimit:{max:120,timeWindow:'1 minute'}}});
+ route('GET','/network/router/menus/:menu',undefined,S.RouterMenuRows,async(r:any)=>network.routerMenu(r.params.menu),true,{schema:{params:S.RouterMenuParams},config:{rateLimit:{max:120,timeWindow:'1 minute'}}});
 }

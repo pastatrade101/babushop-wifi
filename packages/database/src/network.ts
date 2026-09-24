@@ -4,6 +4,7 @@ import {NetworkDiscoveryService,findDeviceByMac,assertManageable,type Discovered
 import {testDeviceReachability,analyzeInputPath} from '../../network/src/diagnostics.ts';
 import {buildPlan} from '../../network/src/wireguard-plan.ts';
 import {normalizeMac} from '../../network/src/cidr.ts';
+import {menuById,menuTree,readMenu,overview} from '../../network/src/console.ts';
 
 // Everything an administrator can do to the network, and nothing more.
 //
@@ -234,3 +235,35 @@ export async function setOmadaUrl(staff:Staff,siteId:string,url:string|null){
 }
 
 export {normalizeMac};
+
+// ── Router console ───────────────────────────────────────────────────────────
+// WinBox's menus, read-only. The browser names a menu from a fixed list; the
+// path, the connection and the credentials never leave the server.
+
+const NOT_ANSWERING='The router is not answering. Check its connection to the server.';
+
+export const routerMenus=()=>({groups:menuTree()});
+
+export async function routerOverview(){
+ return withRouter(async connection=>{
+  try{return {...await overview(connection),read_at:new Date().toISOString()};}
+  catch{throw new Problem(503,NOT_ANSWERING);}
+ });
+}
+
+export async function routerMenu(id:string){
+ const menu=menuById(id);
+ requireValue(menu,404,'Unknown router menu');
+ const described={id:menu.id,label:menu.label,group:menu.group,single:!!menu.single,live:!!menu.live};
+ return withRouter(async connection=>{
+  try{return {menu:described,...await readMenu(connection,menu),error:null,read_at:new Date().toISOString()};}
+  catch(error){
+   // A menu this model or account does not have is an answer, not an outage.
+   const message=(error as Error).message;
+   const unavailable=message==='Router rejected request'?'This router does not have this menu, or the portal\'s read-only account is not allowed to read it.'
+    :message==='Response too large'?'Too much data to show here. Use WinBox for this menu.':null;
+   if(!unavailable)throw new Problem(503,NOT_ANSWERING);
+   return {menu:described,columns:[],items:[],count:0,truncated:false,error:unavailable,read_at:new Date().toISOString()};
+  }
+ });
+}

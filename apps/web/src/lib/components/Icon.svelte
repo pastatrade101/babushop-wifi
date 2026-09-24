@@ -5,6 +5,7 @@ const paths:Record<string,string>={
  payment:'M3 5h18v14H3zM3 9h18M7 15h3',reverse:'M4 9h9a6 6 0 0 1 0 12M4 9l5-5M4 9l5 5',
  search:'m21 21-4.5-4.5M10.5 3a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15',sun:'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5',moon:'M20.8 13A9 9 0 0 1 11 3.2 9 9 0 1 0 20.8 13Z',monitor:'M3 4h18v13H3zM8 21h8m-4-4v4',
  wifi:'M2 8.8a16 16 0 0 1 20 0M5 12.5a11 11 0 0 1 14 0M8.5 16a5.5 5.5 0 0 1 7 0M12 20h.01',
+ router:'M3 14h18v6H3zM7 17h.01M11 17h.01M15 17h3M8 14 6 6m10 8 2-8',
  overview:'M3 3h7v7H3zM14 3h7v4h-7zM14 11h7v10h-7zM3 14h7v7H3z',
  plus:'M12 5v14M5 12h14',ticket:'M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-4zM15 6v2m0 3v2m0 3v2',
  batch:'M7 3h14v14M3 7h14v14H3zM7 11h6m-6 4h6',package:'m12 3 9 5v8l-9 5-9-5V8zM3 8l9 5 9-5M12 13v8M7.5 5.5l9 5',

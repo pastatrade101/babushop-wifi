@@ -25,7 +25,14 @@ export function validateSpeeds(input:{download_mbps?:number|null;upload_mbps?:nu
 // fixed at compile time. There is deliberately no way to pass an arbitrary path
 // or URL through this class: that is what keeps the management backend free of
 // server-side request forgery.
-export type ReadPath='system/resource'|'system/identity'|'system/device-mode'|'ip/hotspot'|'ip/hotspot/active'|'ip/address'|'ip/route'|'ip/arp'|'ip/dhcp-server'|'ip/dhcp-server/lease'|'ip/dhcp-server/network'|'ip/firewall/filter'|'ip/firewall/nat'|'ip/firewall/address-list'|'ip/service'|'interface'|'interface/bridge'|'interface/bridge/port'|'interface/vlan'|'interface/list/member'|'interface/wireguard'|'interface/wireguard/peers';
+export type ReadPath='system/resource'|'system/identity'|'system/device-mode'|'ip/hotspot'|'ip/hotspot/active'|'ip/address'|'ip/route'|'ip/arp'|'ip/dhcp-server'|'ip/dhcp-server/lease'|'ip/dhcp-server/network'|'ip/firewall/filter'|'ip/firewall/nat'|'ip/firewall/address-list'|'ip/service'|'interface'|'interface/bridge'|'interface/bridge/port'|'interface/vlan'|'interface/list/member'|'interface/wireguard'|'interface/wireguard/peers'
+ // The router console's menus (console.ts). Still reads, still a closed list.
+ |'interface/ethernet'|'interface/list'|'interface/wifi'|'interface/wireless'
+ |'ip/dhcp-client'|'ip/dns'|'ip/dns/static'|'ip/firewall/mangle'|'ip/pool'|'ip/neighbor'|'ip/cloud'
+ |'ip/hotspot/host'|'ip/hotspot/user'|'ip/hotspot/user/profile'|'ip/hotspot/profile'|'ip/hotspot/ip-binding'|'ip/hotspot/walled-garden'|'ip/hotspot/walled-garden/ip'|'ip/hotspot/cookie'
+ |'queue/simple'|'queue/tree'|'queue/type'
+ |'system/clock'|'system/routerboard'|'system/package'|'system/scheduler'|'system/health'|'system/license'|'system/ntp/client'
+ |'user'|'user/active'|'user/group'|'radius'|'radius/incoming'|'log'|'tool/netwatch';
 
 export type PingReply={host?:string;status?:string;'packet-loss'?:string;sent?:string;received?:string;'avg-rtt'?:string;'time'?:string;ttl?:string};
 
@@ -36,17 +43,18 @@ export class MikroTikConnection {
   if(this.url.protocol!=='https:'||this.url.username||this.url.password||this.url.pathname!=='/'||this.url.search||this.url.hash||!config.username||!config.password)throw new Error('Configure an HTTPS MikroTik management origin and credentials');
   this.agent=new https.Agent({rejectUnauthorized:true,ca:config.caPath?readFileSync(config.caPath):undefined});
  }
- private send(method:'GET'|'POST',path:string,body:object|null,timeout:number):Promise<unknown>{
+ private send(method:'GET'|'POST',path:string,body:object|null,timeout:number,maxBytes=262144):Promise<unknown>{
   return new Promise((resolve,reject)=>{
    const payload=body?JSON.stringify(body):null;
    const request=https.request(new URL('/rest/'+path,this.url),{method,agent:this.agent,headers:{Authorization:'Basic '+Buffer.from(this.config.username+':'+this.config.password).toString('base64'),Accept:'application/json',...(payload?{'Content-Type':'application/json','Content-Length':Buffer.byteLength(payload)}:{})}},response=>{
-    let raw='';response.on('data',chunk=>{raw+=chunk;if(raw.length>262144)request.destroy(new Error('Response too large'));});
+    let raw='';response.on('data',chunk=>{raw+=chunk;if(raw.length>maxBytes)request.destroy(new Error('Response too large'));});
     response.on('error',reject);response.on('end',()=>{if(response.statusCode!==200)return reject(new Error('Router rejected request'));try{resolve(JSON.parse(raw));}catch{reject(new Error('Invalid router response'));}});
    });
    request.setTimeout(timeout,()=>request.destroy(new Error('Router connection timed out')));request.on('error',reject);request.end(payload??undefined);
   });
  }
- async read(path:ReadPath):Promise<unknown>{return this.send('GET',path,null,5000);}
+ /** A GET on one allowlisted path. The console allows a larger body for the log and busy tables. */
+ async read(path:ReadPath,maxBytes?:number):Promise<unknown>{return this.send('GET',path,null,5000,maxBytes);}
  /**
   * A diagnostic, not a configuration change: /tool/ping writes nothing and the
   * read-only service account is allowed to run it. The address is re-parsed
