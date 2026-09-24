@@ -2,6 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {pool,tx,audit,requireValue,Problem,SITE} from './index.ts';
 import {digest,decrypt,present,token} from './crypto.ts';
 import {paymentProvider,webhookUrl,callbackShape} from '../../payments/src/index.ts';
+import {enqueueSalePaid} from './notifications.ts';
 
 // Self-service voucher purchase by mobile money, alongside the cash counter.
 //
@@ -108,6 +109,10 @@ async function settle(intentId:string){
   await db.query("update wifi.vouchers set inventory_state='SOLD',sold_at=now(),reserved_until=null where id=$1",[voucher.id]);
   await db.query("update wifi.payment_intents set status='PAID',paid_at=now(),sale_id=$2,updated_at=now() where id=$1",[intentId,sale.id]);
   await audit(db,null,'SELF_SERVICE_SALE',sale.id,{reference:intent.reference,total_tzs:sale.total_tzs});
+  await enqueueSalePaid(db,{saleId:sale.id,receipt:sale.receipt_number,reference:intent.reference,amountTzs:Number(sale.total_tzs),
+   packageName:voucher.package_name,durationMinutes:Number(voucher.duration_minutes),
+   downloadMbps:voucher.download_mbps==null?null:Number(voucher.download_mbps),uploadMbps:voucher.upload_mbps==null?null:Number(voucher.upload_mbps),
+   provider:intent.provider,network:intent.network??null,phone:intent.customer_phone??null,paidAt:new Date(sale.created_at).toISOString()});
   return (await db.query('select * from wifi.payment_intents where id=$1',[intentId])).rows[0];
  });
 }
