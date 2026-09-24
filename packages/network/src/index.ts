@@ -41,7 +41,10 @@ export class MikroTikConnection {
  constructor(private config:{baseUrl:string;username:string;password:string;caPath?:string}){
   this.url=new URL(config.baseUrl);
   if(this.url.protocol!=='https:'||this.url.username||this.url.password||this.url.pathname!=='/'||this.url.search||this.url.hash||!config.username||!config.password)throw new Error('Configure an HTTPS MikroTik management origin and credentials');
-  this.agent=new https.Agent({rejectUnauthorized:true,ca:config.caPath?readFileSync(config.caPath):undefined});
+  // Reads share two kept-alive sockets instead of opening one TLS connection
+  // each. A page of the router console is several reads, and a burst of fresh
+  // handshakes is what RouterOS logs as "possible SYN flooding".
+  this.agent=new https.Agent({rejectUnauthorized:true,ca:config.caPath?readFileSync(config.caPath):undefined,keepAlive:true,maxSockets:2});
  }
  private send(method:'GET'|'POST',path:string,body:object|null,timeout:number,maxBytes=262144):Promise<unknown>{
   return new Promise((resolve,reject)=>{
