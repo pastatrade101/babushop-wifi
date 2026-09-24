@@ -4,7 +4,7 @@ import {NetworkDiscoveryService,findDeviceByMac,assertManageable,type Discovered
 import {testDeviceReachability,analyzeInputPath} from '../../network/src/diagnostics.ts';
 import {buildPlan} from '../../network/src/wireguard-plan.ts';
 import {normalizeMac} from '../../network/src/cidr.ts';
-import {menuById,menuTree,readMenu,overview} from '../../network/src/console.ts';
+import {menuById,menuTree,readMenu,overview,parseCommand,formatPrint,formatPing,helpText,maskVouchers} from '../../network/src/console.ts';
 
 // Everything an administrator can do to the network, and nothing more.
 //
@@ -264,6 +264,29 @@ export async function routerMenu(id:string){
     :message==='Response too large'?'Too much data to show here. Use WinBox for this menu.':null;
    if(!unavailable)throw new Problem(503,NOT_ANSWERING);
    return {menu:described,columns:[],items:[],count:0,truncated:false,error:unavailable,read_at:new Date().toISOString()};
+  }
+ });
+}
+
+/**
+ * One line from the read-only terminal. The line is parsed here into a print of
+ * an allowlisted menu or an IPv4 ping; the router never sees the text itself.
+ * Every command is audited, with any voucher code in it masked.
+ */
+export async function routerCommand(staff:Staff,command:string){
+ const parsed=parseCommand(command);
+ await audit(pool,staff.id,'ROUTER_TERMINAL_COMMAND',null,{command:maskVouchers(command.trim()).slice(0,200),kind:parsed.kind});
+ if(parsed.kind==='help')return {ok:true,output:helpText()};
+ if(parsed.kind==='error')return {ok:false,output:parsed.message};
+ return withRouter(async connection=>{
+  try{
+   if(parsed.kind==='ping')return {ok:true,output:formatPing(await connection.ping(parsed.address,parsed.count) as Record<string,string|undefined>[])};
+   return {ok:true,output:formatPrint(await readMenu(connection,parsed.menu),parsed)};
+  }catch(error){
+   const message=(error as Error).message;
+   if(message==='Router rejected request')return {ok:false,output:'failure: this router does not have that menu, or the read-only account may not read it'};
+   if(message==='Response too large')return {ok:false,output:'failure: too much output to show here; use WinBox'};
+   throw new Problem(503,NOT_ANSWERING);
   }
  });
 }

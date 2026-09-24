@@ -73,24 +73,28 @@ export const MENUS:Menu[]=[
  m('System','users','Users','user',['name','group','address','last-logged-in','comment']),
  m('System','active-users','Active users','user/active',['name','when','address','via','group'],{live:true}),
  m('System','user-groups','User groups','user/group',['name','policy']),
+ // Names, sizes and dates only. A file's contents never leave the router:
+ // backups and exports are exactly where its passwords are written down.
+ m('Files','files','File list','file',['name','type','size','last-modified','creation-time']),
+ m('Log','log','Log','log',['time','topics','message'],{live:true}),
  m('RADIUS','radius','RADIUS','radius',['service','address','protocol','authentication-port','accounting-port','timeout','comment']),
  m('RADIUS','radius-incoming','Incoming','radius/incoming',[],{single:true}),
  m('Tools','netwatch','Netwatch','tool/netwatch',['host','type','interval','status','since','comment'],{live:true}),
- m('Log','log','Log','log',['time','topics','message'],{live:true}),
 ];
 
 export const GROUPS=[...new Set(MENUS.map(item=>item.group))];
 export const menuById=(id:string)=>MENUS.find(item=>item.id===id)??null;
 
-/** What the browser needs to draw the menu tree. No paths. */
-export const menuTree=()=>GROUPS.map(group=>({group,items:MENUS.filter(item=>item.group===group).map(({id,label,live,single})=>({id,label,live:!!live,single:!!single}))}));
+/** What the browser needs to draw the menu tree. No paths. The terminal is last, where WinBox keeps "New Terminal". */
+export const menuTree=()=>[...GROUPS.map(group=>({group,items:MENUS.filter(item=>item.group===group).map(({id,label,live,single})=>({id,label,live:!!live,single:!!single}))})),
+ {group:'Terminal',items:[{id:'terminal',label:'New terminal',live:false,single:false}]}];
 
 // ── Redaction ────────────────────────────────────────────────────────────────
 
 const SECRET=/(^|[.-])(password|secret|private-key|preshared-key|pre-shared-key|passphrase|psk|community|token|auth-key)$/;
-const SCRIPT=/(^|[.-])(source|on-event|on-up|on-down|up-script|down-script|test-script|lease-script|script)$/;
+const SCRIPT=/(^|[.-])(source|on-event|on-up|on-down|up-script|down-script|test-script|lease-script|script|contents)$/;
 export const HIDDEN='••••••';
-export const SCRIPT_HIDDEN='(script not shown)';
+export const SCRIPT_HIDDEN='(not shown)';
 
 // A voucher is 16 characters from the voucher alphabet, sometimes hyphenated.
 // Uppercase only: the login page upper-cases what the customer types.
@@ -150,4 +154,98 @@ export async function overview(connection:Pick<MikroTikConnection,'read'>){
   free_hdd:resource['free-hdd-space']??null,total_hdd:resource['total-hdd-space']??null,
   date:clock.date||null,time:clock.time||null,time_zone:clock['time-zone-name']||null,
  };
+}
+
+// ── Terminal ─────────────────────────────────────────────────────────────────
+// A read-only command line. It understands exactly three things -- print,
+// ping and help -- and turns each into a call this module already makes: a
+// print is a read of one allowlisted path, a ping is the connector's IPv4 ping.
+// Nothing typed here is ever sent to the router as text, so there is no command
+// the router could be tricked into running.
+
+export type Parsed=
+ |{kind:'print';menu:Menu;detail:boolean;countOnly:boolean;where:[string,string][]}
+ |{kind:'ping';address:string;count:number}
+ |{kind:'help'}
+ |{kind:'error';message:string};
+
+const BY_PATH=new Map(MENUS.map(item=>[item.path,item]));
+const READ_ONLY='The portal terminal is read-only: it runs print, ping and help. Use WinBox for anything that changes the router.';
+
+export function parseCommand(line:string):Parsed{
+ const text=line.trim();
+ if(!text||/^(help|\?|\/\?)$/i.test(text))return {kind:'help'};
+ const ping=text.match(/^\/?(?:tool[\s/]+)?ping\s+(?:address=)?(\S+)(?:\s+count=(\d+))?\s*$/i);
+ if(ping){
+  const address=ping[1],count=ping[2]?Number(ping[2]):4;
+  if(!/^\d{1,3}(\.\d{1,3}){3}$/.test(address)||address.split('.').some(o=>Number(o)>255))return {kind:'error',message:'ping takes an IPv4 address, for example: ping 8.8.8.8'};
+  if(count<1||count>10)return {kind:'error',message:'ping count must be between 1 and 10'};
+  return {kind:'ping',address,count};
+ }
+ const words=text.replace(/^\//,'').replace(/\//g,' ').split(/\s+/);
+ const at=words.findIndex(w=>w.toLowerCase()==='print');
+ if(at<0)return {kind:'error',message:READ_ONLY};
+ const path=words.slice(0,at).join('/').toLowerCase();
+ const menu=BY_PATH.get(path as ReadPath);
+ if(!menu)return {kind:'error',message:path?`/${words.slice(0,at).join(' ')} is not available in the portal terminal. Type help for the list.`:'Name a menu to print, for example: /interface print'};
+ const rest=words.slice(at+1);
+ const where:[string,string][]=[];let detail=false,countOnly=false,inWhere=false;
+ for(const word of rest){
+  const w=word.toLowerCase();
+  if(w==='detail')detail=true;
+  else if(w==='count-only')countOnly=true;
+  else if(w==='where')inWhere=true;
+  else if(inWhere&&/^[a-z0-9.-]+=.+$/i.test(word)){const i=word.indexOf('=');where.push([word.slice(0,i),word.slice(i+1).replace(/^"|"$/g,'')]);}
+  else if(w==='terse'||w==='without-paging'||w==='brief')continue;
+  else return {kind:'error',message:`print does not understand "${word}" here. It takes detail, count-only and where name=value.`};
+ }
+ return {kind:'print',menu,detail,countOnly,where};
+}
+
+const pad=(s:string,n:number)=>s.length>=n?s:s+' '.repeat(n-s.length);
+const cut=(s:string,n=48)=>s.length>n?s.slice(0,n-1)+'…':s;
+const quote=(v:string)=>/^[\w.:/@*-]+$/.test(v)?v:JSON.stringify(v);
+const FLAG_NAMES:Record<string,string>={X:'DISABLED',I:'INVALID',D:'DYNAMIC',R:'RUNNING',S:'SLAVE'};
+
+/** RouterOS-shaped text for a print: a flag legend, a numbered table, or name: value lines. */
+export function formatPrint(result:{columns:string[];items:Row[]},parsed:Extract<Parsed,{kind:'print'}>):string{
+ const items=result.items.filter(row=>parsed.where.every(([k,v])=>(row[k]??'')===v));
+ if(parsed.countOnly)return String(items.length);
+ if(parsed.menu.single){
+  const row=items[0]??{};const keys=Object.keys(row).filter(k=>!k.startsWith('.'));
+  const width=Math.max(0,...keys.map(k=>k.length));
+  return keys.map(k=>`${' '.repeat(width-k.length+2)}${k}: ${row[k]}`).join('\n');
+ }
+ if(!items.length)return '';
+ const used=[...new Set(items.map(r=>r['.flags']??'').join(''))];
+ const legend=used.length?'Flags: '+Object.keys(FLAG_NAMES).filter(f=>used.includes(f)).map(f=>`${f} - ${FLAG_NAMES[f]}`).join('; ')+'\n':'';
+ if(parsed.detail){
+  return legend+items.map((row,i)=>`${pad(String(i),3)}${pad(row['.flags']??'',3)}`+Object.entries(row).filter(([k])=>!k.startsWith('.')).map(([k,v])=>`${k}=${quote(v)}`).join(' ')).join('\n\n');
+ }
+ const columns=result.columns;
+ const widths=columns.map(c=>Math.max(c.length,...items.map(r=>cut(r[c]??'').length)));
+ const flagWidth=Math.max(0,...items.map(r=>(r['.flags']??'').length));
+ const head=`${pad('#',3)}${flagWidth?pad('',flagWidth+1):''}`+columns.map((c,i)=>pad(c.toUpperCase(),widths[i])).join('  ');
+ const lines=items.map((row,i)=>`${pad(String(i),3)}${flagWidth?pad(row['.flags']??'',flagWidth+1):''}`+columns.map((c,j)=>pad(cut(row[c]??''),widths[j])).join('  '));
+ return legend+[head,...lines].map(l=>l.trimEnd()).join('\n');
+}
+
+export function formatPing(replies:Record<string,string|undefined>[]):string{
+ const rows=replies.filter(r=>r.host||r.status);
+ const lines=rows.map((r,i)=>`${pad(String(i),5)}${pad(r.host??'',17)}${pad(r.size??'',6)}${pad(r.ttl??'',5)}${pad(r.time??'',9)}${r.status??''}`.trimEnd());
+ const last=replies[replies.length-1]??{};
+ const summary=last.sent?`    sent=${last.sent} received=${last.received??0} packet-loss=${last['packet-loss']??'?'}${last['avg-rtt']?` avg-rtt=${last['avg-rtt']}`:''}`:'';
+ return [`${pad('SEQ',5)}${pad('HOST',17)}${pad('SIZE',6)}${pad('TTL',5)}${pad('TIME',9)}STATUS`,...lines,summary].filter(Boolean).join('\n');
+}
+
+export function helpText():string{
+ const groups=[...new Set(MENUS.map(m=>m.group))];
+ return ['The portal terminal is read-only. It runs:','',
+  '  <menu> print [detail] [count-only] [where name=value]',
+  '  ping <IPv4 address> [count=1..10]',
+  '  help','',
+  'Menus you can print:',
+  ...groups.map(g=>'  '+MENUS.filter(m=>m.group===g).map(m=>'/'+m.path.replace(/\//g,' ')).join(', ')),
+  '','Examples:  /ip hotspot active print    /interface print detail    /log print    ping 8.8.8.8',
+ ].join('\n');
 }

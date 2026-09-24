@@ -32,7 +32,7 @@ export type ReadPath='system/resource'|'system/identity'|'system/device-mode'|'i
  |'ip/hotspot/host'|'ip/hotspot/user'|'ip/hotspot/user/profile'|'ip/hotspot/profile'|'ip/hotspot/ip-binding'|'ip/hotspot/walled-garden'|'ip/hotspot/walled-garden/ip'|'ip/hotspot/cookie'
  |'queue/simple'|'queue/tree'|'queue/type'
  |'system/clock'|'system/routerboard'|'system/package'|'system/scheduler'|'system/health'|'system/license'|'system/ntp/client'
- |'user'|'user/active'|'user/group'|'radius'|'radius/incoming'|'log'|'tool/netwatch';
+ |'user'|'user/active'|'user/group'|'radius'|'radius/incoming'|'log'|'tool/netwatch'|'file';
 
 export type PingReply={host?:string;status?:string;'packet-loss'?:string;sent?:string;received?:string;'avg-rtt'?:string;'time'?:string;ttl?:string};
 

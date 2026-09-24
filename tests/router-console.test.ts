@@ -77,3 +77,42 @@ it('summarises the router, and says so when it is not answering',async()=>{
  expect(await overview(router)).toMatchObject({identity:'JIACHIE',version:'7.16.2 (stable)',board:'hAP ac2',cpu_load:'7',model:null,time:'12:00:00'});
  await expect(overview(fake({}))).rejects.toThrow('Router did not answer');
 });
+
+// ── Terminal ─────────────────────────────────────────────────────────────────
+import {parseCommand,formatPrint,formatPing,helpText} from '../packages/network/src/console.ts';
+
+it('understands print in every spelling RouterOS accepts, and only allowlisted menus',()=>{
+ for(const line of ['/ip hotspot active print','/ip/hotspot/active/print','ip hotspot active print','/IP Hotspot Active Print'])
+  expect(parseCommand(line)).toMatchObject({kind:'print',menu:{id:'hotspot-active'},detail:false,countOnly:false});
+ expect(parseCommand('/interface print detail')).toMatchObject({kind:'print',detail:true});
+ expect(parseCommand('/ip dhcp-server lease print count-only')).toMatchObject({kind:'print',countOnly:true,menu:{id:'dhcp-leases'}});
+ expect(parseCommand('/ip address print where interface=babu-guest')).toMatchObject({kind:'print',where:[['interface','babu-guest']]});
+ expect(parseCommand('/file print')).toMatchObject({kind:'print',menu:{id:'files'}});
+ expect(parseCommand('help').kind).toBe('help');
+ expect(parseCommand('').kind).toBe('help');
+});
+
+it('refuses anything that is not a print, a ping or help -- however it is dressed up',()=>{
+ for(const line of ['/system reboot','/system reset-configuration','/ip hotspot active remove 0','/interface disable ether1',
+  '/ip address print; /system reboot','/ip address print where address=1 ; /system reboot','/system/reboot print',':put [/system reboot]',
+  '/export','/export show-sensitive','/user print; /user add name=x group=full','/tool fetch url=http://x print','/interface print detail from=[/system reboot]',
+  'ping google.com','ping 8.8.8.8; /system reboot','ping 999.1.1.1','ping 8.8.8.8 count=500'])
+  expect(parseCommand(line).kind,line).toBe('error');
+ expect(parseCommand('ping 8.8.8.8 count=3')).toEqual({kind:'ping',address:'8.8.8.8',count:3});
+ expect(parseCommand('/tool ping address=1.1.1.1')).toEqual({kind:'ping',address:'1.1.1.1',count:4});
+});
+
+it('prints a RouterOS-shaped table, detail and record',()=>{
+ const parsed=parseCommand('/interface print') as any;
+ const rows=[{'.id':'*1','.flags':'R',name:'ether1',type:'ether'},{'.id':'*2','.flags':'X',name:'ether2',type:'ether'}];
+ const table=formatPrint({columns:['name','type'],items:rows},parsed);
+ expect(table.split('\n')).toEqual(['Flags: X - DISABLED; R - RUNNING','#    NAME    TYPE','0  R ether1  ether','1  X ether2  ether']);
+ expect(formatPrint({columns:['name','type'],items:rows},{...parsed,where:[['name','ether2']]})).toContain('ether2');
+ expect(formatPrint({columns:['name','type'],items:rows},{...parsed,where:[['name','ether2']]})).not.toContain('ether1');
+ expect(formatPrint({columns:['name','type'],items:rows},{...parsed,countOnly:true})).toBe('2');
+ expect(formatPrint({columns:['name','type'],items:rows},{...parsed,detail:true})).toContain('0  R  name=ether1 type=ether');
+ const record=formatPrint({columns:[],items:[{uptime:'1d',version:'7.18.2 (stable)'}]},parseCommand('/system resource print') as any);
+ expect(record).toBe('   uptime: 1d\n  version: 7.18.2 (stable)');
+ expect(formatPing([{host:'8.8.8.8',size:'56',ttl:'117',time:'21ms',status:undefined,sent:'1',received:'1','packet-loss':'0'}])).toContain('sent=1 received=1 packet-loss=0');
+ expect(helpText()).toContain('/ip hotspot active');
+});

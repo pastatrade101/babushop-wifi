@@ -1,5 +1,8 @@
 <script lang="ts">
 import {invalidate,goto} from '$app/navigation';
+import {enhance} from '$app/forms';
+import {tick} from 'svelte';
+import type {SubmitFunction} from '@sveltejs/kit';
 import {navigating} from '$app/state';
 import SafetyBadge from '$lib/components/SafetyBadge.svelte';
 import Icon from '$lib/components/Icon.svelte';
@@ -64,6 +67,41 @@ const memUsed=$derived(ov?.total_memory&&ov?.free_memory?Number(ov.total_memory)
 const memPct=$derived(memUsed!==null&&ov?.total_memory?Math.round(memUsed/Number(ov.total_memory)*100):null);
 const loading=$derived(!!navigating.to&&navigating.to.url.pathname==='/router');
 const isLog=$derived(menuId==='log');
+const isTerminal=$derived(menuId==='terminal');
+
+// ── Terminal ───────────────────────────────────────────────────────────────
+// Scrollback lives in the page, like a WinBox terminal window: it survives
+// switching menus and back, and is gone when the tab closes.
+type Line={kind:'cmd'|'out'|'err'|'note';text:string};
+let lines=$state<Line[]>([{kind:'note',text:'Read-only terminal. Type help for what it can run. clear empties the screen.'}]);
+let command=$state('');
+let busy=$state(false);
+let past:string[]=[];let pastAt=0;
+let screen:HTMLElement|undefined=$state();
+let input:HTMLInputElement|undefined=$state();
+const prompt=$derived(`[portal@${ov?.identity||'MikroTik'}] >`);
+async function toBottom(){await tick();if(screen)screen.scrollTop=screen.scrollHeight;input?.focus();}
+const run:SubmitFunction=({formData,cancel})=>{
+ const line=String(formData.get('command')??'').trim();
+ if(line&&past[past.length-1]!==line)past.push(line);
+ pastAt=past.length;command='';
+ if(/^(clear|cls)$/i.test(line)){lines=[];cancel();return;}
+ lines.push({kind:'cmd',text:`${prompt} ${line}`});
+ if(!line){cancel();toBottom();return;}
+ busy=true;toBottom();
+ return async({result})=>{
+  busy=false;
+  if(result.type==='success'||result.type==='failure'){const d=result.data as {ok?:boolean;output?:string}|undefined;if(d?.output)lines.push({kind:d.ok?'out':'err',text:d.output});}
+  else if(result.type==='redirect')goto(result.location);
+  else lines.push({kind:'err',text:'failure: the portal could not run that command'});
+  toBottom();
+ };
+};
+function recall(e:KeyboardEvent){
+ if(e.key==='ArrowUp'&&pastAt>0){e.preventDefault();command=past[--pastAt];}
+ else if(e.key==='ArrowDown'){e.preventDefault();pastAt=Math.min(past.length,pastAt+1);command=past[pastAt]??'';}
+ else if(e.key==='l'&&e.ctrlKey){e.preventDefault();lines=[];}
+}
 const logTone=(topics:string)=>/critical|error/.test(topics)?'bad':/warning/.test(topics)?'warn':'';
 </script>
 
@@ -110,16 +148,27 @@ const logTone=(topics:string)=>/critical|error/.test(topics)?'bad':/warning/.tes
   <div class="view-head">
    <div>
     <h2>{current?.label??'Unknown menu'}</h2>
-    <p class="small">{current?current.group+' · ':''}{#if view?.items}{view.count} {view.count===1?'item':'items'}{#if view.truncated} (newest {view.count}){/if} · read {readAt}{/if}{#if loading} · loading…{/if}</p>
+    <p class="small">{#if isTerminal}Read-only · print, ping and help{:else}{current?current.group+' · ':''}{/if}{#if view?.items}{view.count} {view.count===1?'item':'items'}{#if view.truncated} (newest {view.count}){/if} · read {readAt}{/if}{#if loading} · loading…{/if}</p>
    </div>
+   {#if !isTerminal}
    <div class="view-tools">
     {#if !current?.single}<input type="search" placeholder="Find…" aria-label="Filter these items" bind:value={query}>{/if}
     <label class="auto"><input type="checkbox" bind:checked={auto}>Auto refresh</label>
     <button type="button" class="small-button" onclick={refresh} disabled={refreshing}><span class:spin={refreshing}><Icon name="reverse" size={15}/></span>Refresh</button>
    </div>
+   {/if}
   </div>
 
-  {#if view?.error}
+  {#if isTerminal}
+   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+   <div class="terminal" onclick={()=>input?.focus()}>
+    <div class="screen" bind:this={screen} role="log" aria-live="polite" aria-label="Terminal output">{#each lines as line}<pre class={line.kind}>{line.text}</pre>{/each}{#if busy}<pre class="note">…</pre>{/if}</div>
+    <form method="POST" action="?/terminal" use:enhance={run} class="command-line">
+     <label for="terminal-command" class="prompt">{prompt}</label>
+     <input id="terminal-command" name="command" bind:value={command} bind:this={input} onkeydown={recall} autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" disabled={busy}>
+    </form>
+   </div>
+  {:else if view?.error}
    {#if view.error!==ov?.error}<div class="notice error">{view.error}</div>{/if}
   {:else if current?.single}
    {@const row=(view?.items?.[0]??{}) as Row}
@@ -151,7 +200,7 @@ const logTone=(topics:string)=>/critical|error/.test(topics)?'bad':/warning/.tes
     </table>
    </div>
   {/if}
-  <p class="small footnote">Read-only. Passwords, keys and script bodies are never sent to the browser, and customer voucher codes show only their last four characters. Changes still go through WinBox.</p>
+  <p class="small footnote">Read-only. Passwords, keys, script bodies and file contents are never sent to the browser, and customer voucher codes show only their last four characters. Changes still go through WinBox.</p>
  </section>
 </div>
 
@@ -209,6 +258,18 @@ const logTone=(topics:string)=>/critical|error/.test(topics)?'bad':/warning/.tes
  .kv{grid-template-columns:minmax(140px,.6fr) 1.4fr;margin:0}
  .kv dt{text-transform:capitalize}
  .footnote{margin:14px 0 0;color:var(--muted)}
+
+ /* The terminal is dark in both themes, as WinBox's is. */
+ .terminal{background:#0b1220;border:1px solid #1f2a3d;border-radius:10px;padding:12px 14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.8rem;color:#e5e7eb;cursor:text}
+ .screen{height:min(56vh,520px);overflow:auto}
+ .screen pre{margin:0 0 6px;white-space:pre;font:inherit;color:inherit}
+ .screen pre.cmd{color:#93c5fd}
+ .screen pre.err{color:#fca5a5;white-space:pre-wrap}
+ .screen pre.note{color:#94a3b8;white-space:pre-wrap}
+ .command-line{display:flex;align-items:center;gap:8px;border-top:1px solid #1f2a3d;padding-top:10px;margin-top:4px}
+ .prompt{flex-direction:row;margin:0;font-weight:600;color:#93c5fd;white-space:nowrap;font-size:inherit}
+ .command-line input{flex:1;min-width:0;background:transparent;border:0;color:#f8fafc;font:inherit;padding:4px 0;min-height:0;outline:none;caret-color:#93c5fd}
+ .command-line input:disabled{background:transparent;opacity:.6}
 
  /* Below this width the tree would squeeze the table WinBox-thin, so it becomes a picker. */
  @media (max-width:1100px){

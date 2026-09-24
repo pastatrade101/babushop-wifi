@@ -7,9 +7,11 @@ import * as S from '../../../packages/contracts/src/index.ts';
 // router. There is intentionally no apply or rollback endpoint yet: the planner
 // produces a document for review, and nothing in this file can change a router.
 //
-// No route accepts an address, host or URL. Targets are named by database id and
-// resolved server-side, which is what keeps the management backend from becoming
-// a request-forgery proxy.
+// No route makes the server connect anywhere a browser chose. Targets are named
+// by database id and resolved server-side, which is what keeps the management
+// backend from becoming a request-forgery proxy. The one address a browser can
+// supply is the terminal's ping target: an IPv4 address the router pings, ICMP
+// only, at most ten packets -- the server itself never connects to it.
 
 type Route=(method:string,url:string,body:unknown,response:unknown,handler:(request:any)=>unknown,isAdmin?:boolean,extra?:any)=>void;
 
@@ -42,4 +44,7 @@ export function registerNetwork(route:Route){
  route('GET','/network/router/menus',undefined,S.RouterMenus,async()=>network.routerMenus(),true);
  route('GET','/network/router/overview',undefined,S.RouterOverview,async()=>network.routerOverview(),true,{config:{rateLimit:{max:120,timeWindow:'1 minute'}}});
  route('GET','/network/router/menus/:menu',undefined,S.RouterMenuRows,async(r:any)=>network.routerMenu(r.params.menu),true,{schema:{params:S.RouterMenuParams},config:{rateLimit:{max:120,timeWindow:'1 minute'}}});
+ // The read-only terminal: print, ping and help, parsed server-side. Slower
+ // limit than the menus, because a ping holds the router for seconds.
+ route('POST','/network/router/terminal',S.RouterCommandInput,S.RouterCommandOutput,async(r:any)=>network.routerCommand(r.staff,r.body.command),true,{config:{rateLimit:{max:30,timeWindow:'1 minute'}}});
 }
