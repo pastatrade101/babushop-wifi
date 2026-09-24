@@ -152,3 +152,57 @@ label{font-size:.875rem;font-weight:500;gap:8px;margin-bottom:18px}label small{c
 html{scroll-padding-top:100px}
 @media(max-width:800px){html{scroll-padding-top:84px}}
 @media print{.topbar{position:static}}
+
+/* ── Staff shell: grouped dropdown navigation, a collapsible desktop rail and
+   the account menu in the top bar. One width variable drives both the
+   sidebar and the main column, so they cannot drift apart at any breakpoint. */
+.workspace{--nav-width:252px}
+@media(max-width:1200px){.workspace{--nav-width:228px}}
+@media(min-width:1600px){.workspace{--nav-width:275px}}
+.sidebar nav{display:flex;flex-direction:column;gap:2px}
+.nav-group-items{display:flex;flex-direction:column;gap:4px}
+.nav-group-items.closed{display:none}
+.nav-group-toggle{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:0;border:0;border-radius:8px;background:transparent;color:var(--muted);font:inherit;font-size:.72rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:14px 12px 8px}
+.nav-group-toggle:hover{color:var(--ink)}
+.nav-group-toggle:focus-visible{outline:2px solid var(--primary);outline-offset:1px}
+.nav-group-toggle svg{transition:transform .15s ease}
+.nav-group-toggle[aria-expanded=false] svg{transform:rotate(-90deg)}
+.topbar-start{display:flex;align-items:center;gap:12px;flex:1;min-width:0}
+.nav-collapse{display:grid;place-items:center;width:40px;height:40px;flex-shrink:0;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink)}
+.nav-collapse:hover{background:var(--surface-muted)}
+@media(min-width:801px){
+ .sidebar{width:var(--nav-width);transition:width .18s ease}
+ .workspace-main{margin-left:var(--nav-width);transition:margin-left .18s ease}
+ .workspace.nav-collapsed{--nav-width:76px}
+ .nav-collapsed .sidebar{padding-inline:12px}
+ .nav-collapsed .sidebar-top{justify-content:center;padding-inline:0}
+ .nav-collapsed .brand>span:last-child,.nav-collapsed .sidebar-label,.nav-collapsed .nav-label,.nav-collapsed .nav-group-toggle{display:none}
+ .nav-collapsed .nav-group-items.closed{display:flex}
+ .nav-collapsed .nav-group+.nav-group{border-top:1px solid var(--line);margin-top:8px;padding-top:8px}
+ .nav-collapsed .sidebar nav a{justify-content:center;padding-inline:0}
+}
+@media(max-width:800px){
+ .sidebar nav{display:flex}
+ .nav-group-items{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+ .nav-collapse{display:none}
+}
+@media(prefers-reduced-motion:reduce){.sidebar,.workspace-main,.nav-group-toggle svg{transition:none}}
+.user-menu{position:relative}
+.user-trigger{display:flex;align-items:center;gap:10px;min-height:0;max-width:300px;border:1px solid transparent;border-radius:999px;background:transparent;color:var(--ink);font:inherit;padding:4px 10px 4px 4px}
+.user-trigger:hover,.user-trigger[aria-expanded=true]{background:var(--surface-muted);border-color:var(--line)}
+.user-trigger:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.user-avatar{width:36px;height:36px;flex-shrink:0;border-radius:50%;display:grid;place-items:center;background:var(--primary);color:var(--on-primary);font-weight:650;font-size:.9rem}
+.user-text{display:flex;flex-direction:column;align-items:flex-start;min-width:0;line-height:1.25;text-align:left}
+.user-text strong{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.8125rem;font-weight:600}
+.user-text small{font-size:.72rem;color:var(--muted)}
+.user-chevron{display:grid;color:var(--muted)}
+.user-popover{position:absolute;right:0;top:calc(100% + 8px);z-index:40;width:270px;padding:8px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 14px 34px var(--shadow-color),var(--shadow)}
+.user-popover-head{display:flex;align-items:center;gap:12px;padding:10px 10px 12px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+.user-popover-head>div{min-width:0}
+.user-popover-head strong{display:block;font-size:.84rem;overflow-wrap:anywhere}
+.user-popover-head>div>span{font-size:.75rem;color:var(--muted)}
+.user-popover form{margin:0}
+.user-signout{display:flex;align-items:center;gap:10px;width:100%;min-height:0;border:0;border-radius:8px;background:transparent;color:var(--danger);font:inherit;font-size:.84rem;font-weight:500;padding:10px}
+.user-signout:hover{background:var(--danger-soft)}
+@media(max-width:800px){.user-text,.user-chevron{display:none}.user-trigger{padding:2px}}
+@media print{.user-menu,.nav-collapse{display:none}}

@@ -61,7 +61,7 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
  route('POST','/sales',S.SaleInput,S.Row,async(r:any)=>sales.sell(r.staff,r.body,r.headers['idempotency-key']),false,{schema:{headers:T.Object({'idempotency-key':S.Id})}});
  route('GET','/sales',undefined,S.List,async(r:any)=>paged(`select s.*, i.provider, i.network, i.reference payment_reference from wifi.manual_sales s
    left join wifi.payment_intents i on i.sale_id=s.id
-   where ($1::boolean or cashier_id=$2) and (receipt_number ilike $3 or customer_phone ilike $3 or i.reference ilike $3)`,[r.staff.role==='ADMIN',r.staff.id,'%'+(r.query.q||'')+'%'],r.query),false,{schema:{querystring:S.Paging}});
+   where ($1::boolean or s.cashier_id=$2) and (s.receipt_number ilike $3 or s.customer_phone ilike $3 or i.reference ilike $3)`,[r.staff.role==='ADMIN',r.staff.id,'%'+(r.query.q||'')+'%'],r.query),false,{schema:{querystring:S.Paging}});
  route('GET','/sales/:id',undefined,T.Object({...S.Row.properties,items:T.Array(S.Row)},{additionalProperties:false}),async(r:any)=>sales.saleDetail(r.staff,r.params.id),false,{schema:{params:S.Params}});
  route('POST','/sales/:id/print',T.Object({},{additionalProperties:false}),S.SecretRows,async(r:any)=>({items:await sales.reveal(r.staff,{sale_id:r.params.id},'SALE_PRINTED')}),false,{schema:{params:S.Params},config:{rateLimit:{max:30,timeWindow:'1 minute'}}});
  route('POST','/sales/:id/reverse',S.Reason,S.Row,async(r:any)=>sales.reverse(r.staff,r.params.id,r.body.reason),true,{schema:{params:S.Params}});
