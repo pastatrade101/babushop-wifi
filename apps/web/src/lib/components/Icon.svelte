@@ -25,7 +25,8 @@ const paths:Record<string,string>={
  tools:'M14.7 6.3a4 4 0 0 0 5 5L21 10a6 6 0 0 1-7.8 5.7L7 22l-5-5 6.3-6.2A6 6 0 0 1 14 3l-1.3 1.3a4 4 0 0 0 2 2',
  filter:'M3 5h18l-7 8v6l-4 2v-8z',maximize:'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',lock:'M6 11h12v10H6zM8 11V7a4 4 0 0 1 8 0v4',
  loopback:'M7 9a3 3 0 1 0 0 6c2 0 3-1.5 5-3s3-3 5-3a3 3 0 1 1 0 6c-2 0-3-1.5-5-3S9 9 7 9',vlan:'M3 12V4h8l10 10-8 8zM7.5 7.5h.01',
- live:'M12 12h.01M8.5 8.5a5 5 0 0 0 0 7m7-7a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8m12.8-12.8a9 9 0 0 1 0 12.8'
+ live:'M12 12h.01M8.5 8.5a5 5 0 0 0 0 7m7-7a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8m12.8-12.8a9 9 0 0 1 0 12.8',
+ bolt:'M13 2 4 14h7l-1 8 9-12h-7z'
 };
 </script>
 <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={paths[name]||paths.wifi}/></svg>

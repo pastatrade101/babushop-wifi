@@ -206,3 +206,5 @@ html{scroll-padding-top:100px}
 .user-signout:hover{background:var(--danger-soft)}
 @media(max-width:800px){.user-text,.user-chevron{display:none}.user-trigger{padding:2px}}
 @media print{.user-menu,.nav-collapse{display:none}}
+/* The customer's buying screens (/buy, /buy/done): compact for a phone's captive-portal sheet. The brand shares a row with the theme picker, so the card starts near the top. */
+.portal-wrap.buy{padding:16px 14px 24px;justify-content:flex-start}.buy-top{width:100%;max-width:450px;display:flex;align-items:center;gap:10px;min-height:40px;margin:0 0 12px;padding-right:128px;color:var(--ink);font-size:1rem}.buy-top .brand-mark{width:32px;height:32px;border-radius:9px}.buy .portal-body{padding:20px 18px 18px}.buy .portal-body h1{font-size:1.5rem;line-height:1.2;margin:4px 0 6px}.buy .portal-body .eyebrow{margin:0}
