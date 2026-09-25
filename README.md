@@ -1,6 +1,6 @@
 > **MikroTik vouchers:** branded code-only HotSpot login, private RADIUS authentication, fixed expiry, device binding, speed limits and session accounting are implemented. See the [deployment and hardware acceptance guide](docs/mikrotik-launch.md). Deploy and complete the voucher tests before serving customers.
 
-# BABU-SHOP WIFI
+# JIACHIE WIFI
 
 A single-shop prepaid Wi-Fi voucher counter for Tanzania. Administrators prepare packages and stock; cashiers record cash sales and print vouchers; customers redeem sold codes through a branded MikroTik HotSpot page, authenticated by the portal’s private RADIUS service. The existing Omada external-portal adapter remains available. No payment gateway, wallet or multi-tenant administration.
 

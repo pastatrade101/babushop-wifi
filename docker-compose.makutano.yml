@@ -1,4 +1,4 @@
-# BABU-SHOP WIFI — deployment on the shared Makutano VPS.
+# JIACHIE WIFI — deployment on the shared Makutano VPS.
 #
 # Use this file instead of docker-compose.yml on that host. The root compose
 # file ships its own Caddy on :80/:443, which would collide with the server's

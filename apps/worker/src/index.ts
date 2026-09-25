@@ -7,7 +7,7 @@ import {validateEnvironment} from '../../../packages/database/src/config.ts';
 import {adapterFromEnv} from '../../../packages/omada/src/index.ts';
 validateEnvironment();const adapter=adapterFromEnv();let running=true;
 process.on('SIGTERM',()=>{running=false;});process.on('SIGINT',()=>{running=false;});
-console.info(`BABU-SHOP WIFI worker started (${adapter.mode})`);
+console.info(`JIACHIE WIFI worker started (${adapter.mode})`);
 // Abandoned checkouts free their own stock through the reserved_until filter,
 // but their intent rows would otherwise sit PENDING for ever. Sweep them on a
 // slow cadence; this is tidying, not a correctness guarantee.

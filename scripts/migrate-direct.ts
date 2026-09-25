@@ -16,6 +16,6 @@ try{
   const version=file.split('_')[0];if((await db.query('select version from supabase_migrations.schema_migrations where version=$1',[version])).rowCount){console.info(`Already applied: ${file}`);continue;}
   const sql=await readFile(new URL(file,dir),'utf8');await db.query(sql);await db.query('insert into supabase_migrations.schema_migrations(version,name,statements) values($1,$2,$3)',[version,file.slice(version.length+1,-4),[sql]]);console.info(`Applied: ${file}`);
  }
- await db.query("insert into wifi.sites(id,name) values('00000000-0000-4000-8000-000000000001',$1) on conflict do nothing",[process.env.WIFI_BRAND||'BABU-SHOP WIFI']);
+ await db.query("insert into wifi.sites(id,name) values('00000000-0000-4000-8000-000000000001',$1) on conflict do nothing",[process.env.WIFI_BRAND||'JIACHIE WIFI']);
  await db.query('commit');const count=(await db.query("select count(*)::int n from pg_tables where schemaname='wifi'")).rows[0].n;console.info(`Migration committed. ${count} business tables; initial site ready. Existing application tables were not modified.`);
 }catch(e){await db.query('rollback').catch(()=>{});console.error('Migration failed; transaction rolled back:',e instanceof Error?e.message:'database error');process.exitCode=1;}finally{await db.end();}

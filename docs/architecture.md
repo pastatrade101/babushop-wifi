@@ -1,4 +1,4 @@
-# BABU-SHOP WIFI architecture
+# JIACHIE WIFI architecture
 
 One shop, one site. TTCL → MikroTik routing/firewall → Omada APs → customers.
 SvelteKit renders staff pages and the lightweight portal. Its actions are presentation-only: Fastify owns business mutations. PostgreSQL is the source of truth. Supabase Auth is exclusively for staff. Customers never initialize Supabase.

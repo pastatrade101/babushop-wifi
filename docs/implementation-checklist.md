@@ -7,7 +7,7 @@
 - [x] Tests, local setup and deployment documentation
 - [x] Verification; live hardware commissioning remains separate
 
-Brand: BABU-SHOP WIFI. One shop, one site, time-only access, TZS.
+Brand: JIACHIE WIFI. One shop, one site, time-only access, TZS.
 Original project and secrets are preserved separately before replacement.
 
 See verification.md for executed checks. Live Omada commissioning remains separate and has not been performed.
