@@ -568,5 +568,5 @@ function recall(e:KeyboardEvent){
   .wb-title{grid-template-columns:1fr auto}
   .wb-who{display:none}
  }
- @media (max-width:640px){.wb-meta .chip:not(.lock){display:none}.win-title{display:none}}
+ @media (max-width:640px){.wb-meta .chip:not(.lock){display:none}.win-title{display:none}.wb-board{min-width:0;overflow:hidden;text-overflow:ellipsis}.wb-board small{display:none}.wb-title{grid-template-columns:minmax(0,1fr) auto}}
 </style>
