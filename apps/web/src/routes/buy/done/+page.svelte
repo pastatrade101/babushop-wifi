@@ -38,7 +38,7 @@ async function copy(){try{await navigator.clipboard.writeText(code);copied=true;
 onMount(()=>{check();return()=>clearTimeout(timer);});
 </script>
 <svelte:head><title>Vocha yako · {data.brand}</title><meta name="robots" content="noindex"></svelte:head>
-<main class="portal-wrap buy" lang="sw"><header class="buy-top"><span class="brand-mark"><Icon size={18}/></span><strong>{data.brand}</strong></header><section class="portal-card"><div class="portal-body" aria-live="polite">
+<main class="portal-wrap buy" lang="sw"><header class="buy-top"><span class="brand-mark"><img src="/logo.webp" alt="" width="38" height="38"></span><strong>{data.brand}</strong></header><section class="portal-card"><div class="portal-body" aria-live="polite">
 
 {#if phase==='loading'||phase==='pending'}
  <div class="wifi-symbol" aria-hidden="true"><Icon size={26}/></div>

@@ -328,4 +328,7 @@ html{scroll-padding-top:100px}
  .workspace .table-wrap td[data-label=""]{justify-content:center;text-align:center}
  .workspace .table-wrap td:first-child{font-weight:650}
 }
+/* The shop's logo image in place of the old Wi-Fi glyph on a blue tile. */
+.brand-mark:has(img),.m-logo:has(img){background:none;box-shadow:none;padding:0;overflow:hidden}
+.brand-mark img,.m-logo img{display:block;width:100%;height:100%;object-fit:contain}
 

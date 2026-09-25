@@ -31,7 +31,7 @@ $effect(()=>{
 <svelte:head><title>Nunua Wi-Fi · {data.brand}</title><meta name="robots" content="noindex"></svelte:head>
 <main class="portal-wrap buy" lang="sw">
  <!-- Shares a row with the theme picker, so the card starts near the top of a phone's captive-portal sheet. -->
- <header class="buy-top"><span class="brand-mark"><Icon size={18}/></span><strong>{data.brand}</strong></header>
+ <header class="buy-top"><span class="brand-mark"><img src="/logo.webp" alt="" width="38" height="38"></span><strong>{data.brand}</strong></header>
  <section class="portal-card"><div class="portal-body">
   <p class="eyebrow">NUNUA WI-FI</p>
   <h1>Lipa kwa simu yako.</h1>

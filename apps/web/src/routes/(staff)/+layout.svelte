@@ -93,7 +93,7 @@ $effect(()=>{
 <a class="skip-link" href="#main-content">Skip to content</a>
 <div class="workspace" class:nav-collapsed={collapsed}>
  <aside class="sidebar">
-  <div class="sidebar-top"><a class="brand" href="/" title={collapsed?data.brand:undefined}><span class="brand-mark"><Icon name="wifi" size={21}/></span><span>{data.brand}</span></a><button class="menu-toggle" aria-label={menuOpen?'Close navigation':'Open navigation'} aria-expanded={menuOpen} aria-controls="workspace-navigation" onclick={()=>menuOpen=!menuOpen}><Icon name={menuOpen?'close':'menu'}/></button></div>
+  <div class="sidebar-top"><a class="brand" href="/" title={collapsed?data.brand:undefined}><span class="brand-mark"><img src="/logo.webp" alt="" width="38" height="38"></span><span>{data.brand}</span></a><button class="menu-toggle" aria-label={menuOpen?'Close navigation':'Open navigation'} aria-expanded={menuOpen} aria-controls="workspace-navigation" onclick={()=>menuOpen=!menuOpen}><Icon name={menuOpen?'close':'menu'}/></button></div>
   <div id="workspace-navigation" class="sidebar-body" class:open={menuOpen}>
    <p class="sidebar-label">WORKSPACE</p>
    <nav aria-label="Main navigation">
@@ -112,7 +112,7 @@ $effect(()=>{
  </aside>
  <div class="workspace-main">
   <header class="topbar">
-   <div class="m-appbar-start"><a href="/" class="m-logo" aria-label={data.brand+' home'}><Icon name="wifi" size={18}/></a><span class="m-title">{current}</span></div>
+   <div class="m-appbar-start"><a href="/" class="m-logo" aria-label={data.brand+' home'}><img src="/logo.webp" alt="" width="32" height="32"></a><span class="m-title">{current}</span></div>
    <div class="topbar-start">
     <button type="button" class="nav-collapse" aria-label={collapsed?'Expand navigation':'Collapse navigation'} aria-pressed={collapsed} title={collapsed?'Expand navigation':'Collapse navigation'} onclick={toggleNav}><Icon name={collapsed?'menu':'panel'} size={19}/></button>
     <form class="workspace-search" method="GET" action="/vouchers" role="search"><Icon name="search" size={20}/><input name="q" aria-label="Search vouchers" placeholder="Search vouchers…"><button type="submit" class="icon-button" aria-label="Search"><Icon name="arrow" size={17}/></button></form>
