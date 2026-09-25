@@ -208,3 +208,37 @@ html{scroll-padding-top:100px}
 @media print{.user-menu,.nav-collapse{display:none}}
 /* The customer's buying screens (/buy, /buy/done): compact for a phone's captive-portal sheet. The brand shares a row with the theme picker, so the card starts near the top. */
 .portal-wrap.buy{padding:16px 14px 24px;justify-content:flex-start}.buy-top{width:100%;max-width:450px;display:flex;align-items:center;gap:10px;min-height:40px;margin:0 0 12px;padding-right:128px;color:var(--ink);font-size:1rem}.buy-top .brand-mark{width:32px;height:32px;border-radius:9px}.buy .portal-body{padding:20px 18px 18px}.buy .portal-body h1{font-size:1.5rem;line-height:1.2;margin:4px 0 6px}.buy .portal-body .eyebrow{margin:0}
+/* ── Workspace density pass (2026-09-25) ─────────────────────────────────────
+   Stat cards on Overview, Reports, Revenue and Network: plain white, sized by
+   their content, with colour only in the icon badge. Earlier passes above gave
+   them gradients and a 172px minimum height, which read as empty space.
+   Page headings, filter bars, panels and table rows are tightened to match.
+   Selectors carry .workspace-main so they outrank the older rules. */
+.workspace-main .metrics{gap:14px;margin-bottom:18px}
+.workspace-main .metrics article,.workspace-main .metrics article:nth-child(n){--tone:var(--primary-text);--tone-soft:var(--primary-soft);min-height:0;gap:3px;padding:15px 16px 13px;border:1px solid var(--line);border-radius:12px;background:var(--surface);box-shadow:var(--shadow)}
+.workspace-main .metrics article:nth-child(2){--tone:var(--purple);--tone-soft:var(--purple-soft)}
+.workspace-main .metrics article:nth-child(3){--tone:var(--success);--tone-soft:var(--success-soft)}
+.workspace-main .metrics article:nth-child(4){--tone:var(--warning);--tone-soft:var(--warning-soft)}
+.workspace-main .metrics article:nth-child(5){--tone:var(--cyan);--tone-soft:var(--cyan-soft)}
+.workspace-main .metrics article.attention{border-color:var(--warning)}
+.workspace-main .metric-heading{min-height:0;padding-right:0;display:flex;align-items:center;justify-content:flex-start;gap:10px;font-size:.8rem;font-weight:600;color:var(--muted)}
+.workspace-main .metrics article:nth-child(n) .metric-heading svg,.workspace-main .metric-heading svg{display:block;position:static;order:-1;flex-shrink:0;width:32px;height:32px;padding:7px;border-radius:9px;background:var(--tone-soft);color:var(--tone);box-shadow:none}
+.workspace-main .metrics strong{margin-top:8px;font-size:1.75rem;line-height:1.15;font-weight:700;letter-spacing:-.03em;color:var(--ink)}
+.workspace-main .metrics strong small{font-size:.72rem;font-weight:600;letter-spacing:0;color:var(--muted)}
+.workspace-main .metrics article>small{font-size:.75rem;color:var(--muted);line-height:1.4}
+.workspace-main .metrics article>a{margin-top:10px;padding-top:9px;border-top:1px solid var(--line);font-size:.76rem;color:var(--primary-text)}
+.workspace-main .metrics article>a:hover{color:var(--ink)}
+.workspace-main .content>.breadcrumb{margin-bottom:8px}
+.workspace-main .page-heading{margin-bottom:16px;gap:16px}
+.workspace-main .page-heading h1{font-size:1.55rem;line-height:1.25;margin:0}
+.workspace-main .page-heading p:last-child{margin:4px 0 0;font-size:.84rem;line-height:1.5}
+.workspace-main .panel{padding:18px 20px;margin-bottom:18px}
+.workspace-main .panel h2{font-size:1.02rem;margin-bottom:12px}
+.workspace-main .filter-bar{gap:8px;padding-bottom:14px}
+.workspace-main .filter-bar label{font-size:.75rem;gap:4px}
+.workspace-main .filter-bar input,.workspace-main .filter-bar select{min-height:38px;padding:7px 11px;font-size:.82rem}
+.workspace-main .filter-bar .button{min-height:38px;padding:8px 14px}
+.workspace-main th{padding:10px 14px;font-size:.78rem}
+.workspace-main td{padding:11px 14px}
+@media (max-width:700px){.workspace-main .metrics strong{font-size:1.45rem}.workspace-main .metrics article{padding:13px 14px 11px}}
+

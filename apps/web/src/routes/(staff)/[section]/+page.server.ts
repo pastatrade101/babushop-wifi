@@ -3,11 +3,10 @@ import {packagesFromCsv} from '$lib/csv';
 import {fail,error} from '@sveltejs/kit';
 import {randomUUID} from 'node:crypto';
 import {api} from '$lib/server/api';
-const allowed=['sell','vouchers','voucher-batches','packages','sales','payments','access-grants','sessions','reports','staff','settings'];
-export const load=async(event:any)=>{const parent=await event.parent(),section=event.params.section;if(!allowed.includes(section))error(404,'Page not found');if(parent.staff.role!=='ADMIN'&&!['sell','vouchers','packages','sales','payments'].includes(section))error(403,'Administrator access required');const query=new URLSearchParams();for(const k of ['page','q','state','package_id','sort','from','to'])if(event.url.searchParams.has(k))query.set(k,event.url.searchParams.get(k)!);let result:any={};
+const allowed=['sell','vouchers','voucher-batches','packages','sales','payments','access-grants','sessions','staff','settings'];
+export const load=async(event:any)=>{const parent=await event.parent(),section=event.params.section;if(!allowed.includes(section))error(404,'Page not found');if(parent.staff.role!=='ADMIN'&&!['sell','vouchers','packages','sales','payments'].includes(section))error(403,'Administrator access required');const query=new URLSearchParams();for(const k of ['page','q','state','package_id','sort','from','to'])if(event.url.searchParams.has(k))query.set(k,event.url.searchParams.get(k)!);const result:any={};
  if(section==='sell')result.packages=await api(event,'/packages');
  else if(section==='settings'){result.integration=await api(event,'/integrations/omada/status');result.network=await api(event,'/integrations/network/status');}
- else if(section==='reports')result={totals:await api(event,'/reports/sales?'+query),inventory:await api(event,'/reports/inventory'),audit:await api(event,'/audit')};
  else if(section==='payments')result.list=await api(event,'/payments?'+query);
  else{result.list=await api(event,'/'+section+'?'+query);if(section==='voucher-batches'||section==='vouchers')result.packages=await api(event,'/packages');if(section==='access-grants')result.attempts=await api(event,'/authorization-attempts?state=NEEDS_REVIEW');if(section==='sales'&&event.url.searchParams.has('sale'))result.sale=await api(event,'/sales/'+event.url.searchParams.get('sale'));}
  return {section,...result,query:Object.fromEntries(query)};
