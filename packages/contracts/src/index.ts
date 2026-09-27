@@ -38,7 +38,7 @@ export const PackageBreakdown=T.Object({items:T.Array(T.Object({package_name:T.S
 const nullableString=T.Union([T.String(),T.Null()]);
 const fields:Record<string,any>={};
 for(const name of ['id','site_id','package_id','batch_id','created_by','reservation_id','sale_id','voucher_id','grant_id','reviewed_by','actor_id','entity_id','name','description','label','role','display_name','code_mask','package_name','inventory_state','policy','receipt_number','cashier_name','currency','payment_method','client_mac','state','action','code','message','status','reference','session_id','session_state','upload_bytes','download_bytes'])fields[name]=T.Optional(T.String());
-for(const name of ['created_at','updated_at','sold_at','expires_at','activated_at','proposed_expires_at','deadline','reversal_reason','reason','review_note','customer_name','customer_phone','notes','last_seen_at','stopped_at','terminate_cause','paid_at','cashier_id','provider','network','provider_reference','failure_reason','payment_reference','receipt_number','package_name'])fields[name]=T.Optional(nullableString);
+for(const name of ['created_at','updated_at','sold_at','expires_at','activated_at','email','invited_at','proposed_expires_at','deadline','reversal_reason','reason','review_note','customer_name','customer_phone','notes','last_seen_at','stopped_at','terminate_cause','paid_at','cashier_id','provider','network','provider_reference','failure_reason','payment_reference','receipt_number','package_name'])fields[name]=T.Optional(nullableString);
 for(const name of ['price_tzs','duration_minutes','quantity','total_tzs','available','count','stock','sold_unused','active','needs_review','gross_tzs','reversals_tzs','net_tzs','vouchers_sold','session_seconds','amount_tzs'])fields[name]=T.Optional(T.Number());
 fields.download_mbps=T.Optional(T.Union([T.Number(),T.Null()]));fields.upload_mbps=T.Optional(T.Union([T.Number(),T.Null()]));
 fields.active=T.Optional(T.Union([T.Boolean(),T.Number()]));fields.enabled=T.Optional(T.Boolean());fields.evidence=T.Optional(T.Object({code:T.Optional(T.String())},{additionalProperties:false}));
@@ -82,6 +82,11 @@ export const RouterFileVersionsQuery=T.Object({name:T.String({maxLength:200})},{
 export const RouterFileVersions=T.Object({items:T.Array(T.Object({id:Id,name:T.String(),reason:T.String(),size:T.Integer(),sha256:T.String(),created_at:T.String(),created_by:T.Union([T.String(),T.Null()])},{additionalProperties:false}))},{additionalProperties:false});
 export const RouterCommandInput=T.Object({command:T.String({maxLength:200})},{additionalProperties:false});
 export const RouterCommandOutput=T.Object({ok:T.Boolean(),output:T.String()},{additionalProperties:false});
+// Staff accounts. A role is one of three fixed words; the API refuses anything else.
+export const StaffRole=T.Union([T.Literal('ADMIN'),T.Literal('CASHIER'),T.Literal('SALES')]);
+export const StaffInviteInput=T.Object({email:T.String({minLength:3,maxLength:254}),display_name:T.String({minLength:1,maxLength:80}),role:StaffRole},{additionalProperties:false});
+export const StaffAccessInput=T.Object({role:StaffRole,enabled:T.Boolean()},{additionalProperties:false});
+export const StaffInvites=T.Object({enabled:T.Boolean(),reason:T.Union([T.String(),T.Null()])},{additionalProperties:false});
 export const ApprovalInput=T.Object({approved:T.Boolean()},{additionalProperties:false});
 export const OmadaUrlInput=T.Object({url:T.Union([T.String({maxLength:300}),T.Null()])},{additionalProperties:false});
 // Host facts an administrator captures on the VPS. No secret belongs here: the

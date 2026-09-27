@@ -1,8 +1,9 @@
 import {error} from '@sveltejs/kit';
 import {api} from '$lib/server/api';
+import {canOpen} from '$lib/roles';
 export const load=async(event:any)=>{
  const parent=await event.parent();
- if(parent.staff.role!=='ADMIN')error(403,'Administrator access required');
+ if(!canOpen(parent.staff.role,'/revenue'))error(403,'Your role does not include this page');
  const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Dar_es_Salaam',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
  const start=(days:number)=>{const date=new Date(today+'T00:00:00Z');date.setUTCDate(date.getUTCDate()-days+1);return date.toISOString().slice(0,10);};
  const from=event.url.searchParams.get('from')||start(30),to=event.url.searchParams.get('to')||today;

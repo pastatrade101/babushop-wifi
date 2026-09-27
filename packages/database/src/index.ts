@@ -7,5 +7,6 @@ export async function tx<T>(fn:(db:DB)=>Promise<T>):Promise<T>{const c=await poo
 export async function audit(db:DB,actor:string|null,action:string,id:string|null,details:object={}){await db.query('insert into wifi.audit_logs(actor_id,action,entity_id,details) values($1,$2,$3,$4)',[actor,action,id,details]);}
 export class Problem extends Error {constructor(public status:number,message:string){super(message);}}
 export function requireValue(condition:unknown,status:number,message:string):asserts condition {if(!condition)throw new Problem(status,message);}
-export type Staff={id:string;role:'ADMIN'|'CASHIER';display_name:string;enabled:boolean};
+export type Role='ADMIN'|'CASHIER'|'SALES';
+export type Staff={id:string;role:Role;display_name:string;enabled:boolean};
 export const SITE='00000000-0000-4000-8000-000000000001';

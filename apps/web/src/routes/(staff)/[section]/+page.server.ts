@@ -1,14 +1,15 @@
 import {toMinutes} from '$lib/duration';
+import {canOpen} from '$lib/roles';
 import {packagesFromCsv} from '$lib/csv';
 import {fail,error} from '@sveltejs/kit';
 import {randomUUID} from 'node:crypto';
 import {api} from '$lib/server/api';
 const allowed=['sell','vouchers','voucher-batches','packages','sales','payments','access-grants','sessions','staff','settings'];
-export const load=async(event:any)=>{const parent=await event.parent(),section=event.params.section;if(!allowed.includes(section))error(404,'Page not found');if(parent.staff.role!=='ADMIN'&&!['sell','vouchers','packages','sales','payments'].includes(section))error(403,'Administrator access required');const query=new URLSearchParams();for(const k of ['page','q','state','package_id','sort','from','to'])if(event.url.searchParams.has(k))query.set(k,event.url.searchParams.get(k)!);const result:any={};
+export const load=async(event:any)=>{const parent=await event.parent(),section=event.params.section;if(!allowed.includes(section))error(404,'Page not found');if(!canOpen(parent.staff.role,'/'+section))error(403,'Your role does not include this page');const query=new URLSearchParams();for(const k of ['page','q','state','package_id','sort','from','to'])if(event.url.searchParams.has(k))query.set(k,event.url.searchParams.get(k)!);const result:any={};
  if(section==='sell')result.packages=await api(event,'/packages');
  else if(section==='settings'){result.integration=await api(event,'/integrations/omada/status');result.network=await api(event,'/integrations/network/status');}
  else if(section==='payments')result.list=await api(event,'/payments?'+query);
- else{result.list=await api(event,'/'+section+'?'+query);if(section==='voucher-batches'||section==='vouchers')result.packages=await api(event,'/packages');if(section==='access-grants')result.attempts=await api(event,'/authorization-attempts?state=NEEDS_REVIEW');if(section==='sales'&&event.url.searchParams.has('sale'))result.sale=await api(event,'/sales/'+event.url.searchParams.get('sale'));}
+ else{result.list=await api(event,'/'+section+'?'+query);if(section==='staff')result.invites=await api(event,'/staff/invites');if(section==='voucher-batches'||section==='vouchers')result.packages=await api(event,'/packages');if(section==='access-grants')result.attempts=await api(event,'/authorization-attempts?state=NEEDS_REVIEW');if(section==='sales'&&event.url.searchParams.has('sale'))result.sale=await api(event,'/sales/'+event.url.searchParams.get('sale'));}
  return {section,...result,query:Object.fromEntries(query)};
 };
 export const actions={default:async(event:any)=>{const f=await event.request.formData(),get=(n:string)=>String(f.get(n)||''),op=get('op'),id=get('id');try{
@@ -38,6 +39,8 @@ export const actions={default:async(event:any)=>{const f=await event.request.for
  if(op==='reveal')return {printed:await api(event,'/vouchers/'+id+'/reveal',{}),message:'Voucher revealed. This access has been audited.'};
  if(op==='void'||op==='reverse'||op==='revoke'){const path=op==='void'?'vouchers':op==='reverse'?'sales':'access-grants';const response=await api(event,'/'+path+'/'+id+'/'+op,{reason:get('reason')});return {message:response.message||(op==='reverse'?'Sale reversed; all codes permanently voided.':'Change saved.')};}
  if(op==='review'){await api(event,'/authorization-attempts/'+id+'/review',{decision:get('decision'),reason:get('reason')});return {message:'Evidence recorded. The original deadline is unchanged.'};}
+ if(op==='invite'){const sent=await api(event,'/staff/invite',{email:get('email'),display_name:get('display_name'),role:get('role')});return {message:`Invite sent to ${sent.email}. They choose their own password from the link in it.`};}
+ if(op==='resend-invite'){await api(event,'/staff/'+id+'/invite',{});return {message:'A new invite link has been sent. The earlier one no longer works.'};}
  if(op==='staff'){await api(event,'/staff/'+id,{role:get('role'),enabled:get('enabled')==='on'},'PATCH');return {message:'Staff access updated.'};}
  if(op==='mikrotik-test'){const r=await api(event,'/integrations/mikrotik/test',{});return {message:r.message};}
  if(op==='test'){const r=await api(event,'/integrations/omada/test',{});return {message:r.message};}

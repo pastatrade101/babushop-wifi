@@ -22,7 +22,7 @@ export type SaleContext={brand:string;portalUrl:string;todayCount:number;todayTo
 
 const BRAND='#487fff',DEEP='#3869dd',BLUE_TEXT='#315fce',SOFT='#edf3ff',INK='#111827',MUTED='#64748b',LINE='#e5e7eb',BG='#f5f6fa';
 
-const esc=(value:unknown)=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
+export const esc=(value:unknown)=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 export const money=(n:number)=>new Intl.NumberFormat('en-TZ').format(Math.round(n||0));
 const when=(iso:string)=>new Intl.DateTimeFormat('en-GB',{dateStyle:'medium',timeStyle:'short',timeZone:'Africa/Dar_es_Salaam'}).format(new Date(iso));
 

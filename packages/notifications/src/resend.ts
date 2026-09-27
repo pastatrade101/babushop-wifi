@@ -12,18 +12,31 @@ export type SendResult={ok:true;id:string}|{ok:false;retryable:boolean;status:nu
 const EMAIL=/^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/;
 
 /**
- * Null unless both a key and at least one valid recipient are set, so a
- * half-configured install sends nothing rather than failing on every sale.
+ * Resend alone: enough to send any email the portal composes, such as a staff
+ * invite. Null without a key, so the feature that needs it can say so.
  */
-export function emailConfig(env:NodeJS.ProcessEnv=process.env):EmailConfig|null{
+export function mailerConfig(env:NodeJS.ProcessEnv=process.env):{apiKey:string;from:string}|null{
  const apiKey=(env.RESEND_API_KEY||'').trim();
- const to=(env.SALE_ALERT_EMAIL||'').split(',').map(v=>v.trim()).filter(v=>EMAIL.test(v)).slice(0,10);
- if(!apiKey||!to.length)return null;
+ if(!apiKey)return null;
  // Resend only sends from a domain verified in its dashboard. onboarding@resend.dev
  // works without one, but only to the address that owns the Resend account.
  const from=(env.RESEND_FROM||'').trim()||'JIACHIE WIFI <onboarding@resend.dev>';
- return {apiKey,from,to};
+ return {apiKey,from};
 }
+
+/**
+ * Sale alerts: null unless both a key and at least one valid recipient are
+ * set, so a half-configured install sends nothing rather than failing on
+ * every sale.
+ */
+export function emailConfig(env:NodeJS.ProcessEnv=process.env):EmailConfig|null{
+ const mailer=mailerConfig(env);
+ const to=(env.SALE_ALERT_EMAIL||'').split(',').map(v=>v.trim()).filter(v=>EMAIL.test(v)).slice(0,10);
+ if(!mailer||!to.length)return null;
+ return {...mailer,to};
+}
+
+export const isEmail=(value:string)=>EMAIL.test(value);
 
 export async function sendEmail(message:EmailMessage,apiKey:string,fetchImpl:typeof fetch=fetch):Promise<SendResult>{
  let response:Response;

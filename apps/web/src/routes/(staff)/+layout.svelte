@@ -4,6 +4,7 @@ import {afterNavigate} from '$app/navigation';
 import {untrack} from 'svelte';
 import Icon from '$lib/components/Icon.svelte';
 import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+import {canOpen,roleLabel} from '$lib/roles';
 let {data,children}=$props();let menuOpen=$state(false);
 
 // Grouped so a long menu reads as a few areas of work rather than one list.
@@ -17,10 +18,9 @@ const groups:{id:string;label:string;links:Link[]}[]=[
  {id:'network',label:'Network',links:[['/network','Network','network'],['/router','Router','router'],['/settings','Network setup','settings']]},
  {id:'admin',label:'Administration',links:[['/staff','Staff','staff']]},
 ];
-const cashier=['/','/sell','/vouchers','/packages','/sales','/payments'];
 // A detail page such as /network/<id> should keep its section lit in the sidebar.
 const isCurrent=(url:string)=>page.url.pathname===url||(url!=='/'&&page.url.pathname.startsWith(url+'/'));
-const visible=$derived(groups.map(g=>({...g,links:g.links.filter(([url])=>data.staff.role==='ADMIN'||cashier.includes(url))})).filter(g=>g.links.length));
+const visible=$derived(groups.map(g=>({...g,links:g.links.filter(([url])=>canOpen(data.staff.role,url))})).filter(g=>g.links.length));
 const current=$derived(groups.flatMap(g=>g.links).find(([url])=>isCurrent(url))?.[1]||'Workspace');
 const groupOf=()=>groups.find(g=>g.links.some(([url])=>isCurrent(url)))?.id;
 
@@ -41,7 +41,7 @@ function toggleNav(){
 
 // Account menu: the signed-in email stands in for a display name.
 const accountName=$derived(data.email||data.staff.display_name);
-const roleLabel=$derived(data.staff.role==='ADMIN'?'Administrator':'Cashier');
+const roleName=$derived(roleLabel(data.staff.role));
 let userOpen=$state(false);let userMenu:HTMLElement|undefined=$state();
 $effect(()=>{
  if(!userOpen)return;
@@ -121,14 +121,14 @@ $effect(()=>{
     <ThemeToggle/>
     <span class="mode-pill" class:test-mode={data.mode!=='live'}><span class="status-dot"></span>{data.mode==='live'?'Live mode':'Test mode'}</span>
     <div class="user-menu" bind:this={userMenu}>
-     <button type="button" class="user-trigger" aria-label={'Account menu: '+accountName+', '+roleLabel} aria-haspopup="menu" aria-expanded={userOpen} aria-controls="account-menu" onclick={()=>userOpen=!userOpen}>
+     <button type="button" class="user-trigger" aria-label={'Account menu: '+accountName+', '+roleName} aria-haspopup="menu" aria-expanded={userOpen} aria-controls="account-menu" onclick={()=>userOpen=!userOpen}>
       <span class="user-avatar" aria-hidden="true">{accountName.slice(0,1).toUpperCase()}</span>
-      <span class="user-text"><strong>{accountName}</strong><small>{roleLabel}</small></span>
+      <span class="user-text"><strong>{accountName}</strong><small>{roleName}</small></span>
       <span class="user-chevron"><Icon name="chevron" size={16}/></span>
      </button>
      {#if userOpen}
       <div class="user-popover" id="account-menu" role="menu">
-       <div class="user-popover-head"><span class="user-avatar" aria-hidden="true">{accountName.slice(0,1).toUpperCase()}</span><div><strong>{accountName}</strong><span>{roleLabel}</span></div></div>
+       <div class="user-popover-head"><span class="user-avatar" aria-hidden="true">{accountName.slice(0,1).toUpperCase()}</span><div><strong>{accountName}</strong><span>{roleName}</span></div></div>
        <form method="POST" action="/logout"><button class="user-signout" role="menuitem"><Icon name="logout" size={18}/>Sign out</button></form>
       </div>
      {/if}
@@ -157,7 +157,7 @@ $effect(()=>{
    <div class="m-grab" aria-hidden="true"></div>
    <div class="m-account">
     <span class="user-avatar" aria-hidden="true">{accountName.slice(0,1).toUpperCase()}</span>
-    <div><strong>{accountName}</strong><span>{roleLabel} · {data.mode==='live'?'Live mode':'Test mode'}</span></div>
+    <div><strong>{accountName}</strong><span>{roleName} · {data.mode==='live'?'Live mode':'Test mode'}</span></div>
     <button type="button" class="m-icon-button" aria-label="Close menu" onclick={()=>moreOpen=false}><Icon name="close" size={18}/></button>
    </div>
    <!-- Home is already a tab; everything else is here, grouped as in the sidebar. -->

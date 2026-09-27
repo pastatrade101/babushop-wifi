@@ -9,6 +9,8 @@ import {pool,tx,audit,Problem,requireValue,SITE,type Staff} from '../../../packa
 import * as sales from '../../../packages/database/src/sales.ts';
 import * as access from '../../../packages/database/src/access.ts';
 import * as purchases from '../../../packages/database/src/purchases.ts';
+import * as staffAccounts from '../../../packages/database/src/staff.ts';
+import {MONEY_ROLES,seesAllSales} from './access.ts';
 import * as catalogue from '../../../packages/database/src/catalogue.ts';
 import {revenueSummary} from '../../../packages/database/src/revenue.ts';
 import {paymentProvider} from '../../../packages/payments/src/index.ts';
@@ -36,8 +38,9 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
  });
  app.get('/docs',async(_req,reply)=>reply.type('text/html').send('<!doctype html><html lang="en"><meta charset="utf-8"><title>JIACHIE WIFI API</title><h1>JIACHIE WIFI API</h1><p>Administrator bearer authentication is required. Download the OpenAPI schema at <a href="/api/v1/openapi.json">/api/v1/openapi.json</a> and import it into your API client.</p></html>')); 
  const admin=async(req:any)=>requireValue(req.staff?.role==='ADMIN',403,'Administrator permission required');
+ const only=(roles:string[])=>async(req:any)=>requireValue(roles.includes(req.staff?.role),403,'Your role does not include this page');
  const schema=(body?:any,response:any=S.Row,extra:object={})=>({...(body?{body}:{}),response:{200:response,'4xx':S.ErrorResponse,'5xx':S.ErrorResponse},...extra});
- const route=(method:any,url:string,body:any,response:any,handler:any,isAdmin=false,extra:any={})=>app.route({method,url:'/api/v1'+url,schema:schema(body,response,extra.schema||{}),...(isAdmin?{preHandler:admin}:{}),config:extra.config||{},...(extra.bodyLimit?{bodyLimit:extra.bodyLimit}:{}),handler});
+ const route=(method:any,url:string,body:any,response:any,handler:any,access:boolean|string[]=false,extra:any={})=>app.route({method,url:'/api/v1'+url,schema:schema(body,response,extra.schema||{}),...(access===true?{preHandler:admin}:Array.isArray(access)?{preHandler:only(access)}:{}),config:extra.config||{},...(extra.bodyLimit?{bodyLimit:extra.bodyLimit}:{}),handler});
  const paged=async(sql:string,values:any[],q:any)=>{const page=q.page||1;const rows=(await pool.query(`select * from (${sql}) listed order by created_at ${q.sort==='oldest'?'asc':'desc'} limit 26 offset $${values.length+1}`,[...values,(page-1)*25])).rows;return {items:rows.slice(0,25),page,has_more:rows.length>25};};
  app.get('/health/live',{schema:schema(undefined,S.OK)},async()=>({ok:true}));
  app.get('/health/ready',{schema:schema(undefined,S.OK)},async()=>{await pool.query('select 1 from wifi.sites limit 1');return {ok:true};});
@@ -61,7 +64,7 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
  route('POST','/sales',S.SaleInput,S.Row,async(r:any)=>sales.sell(r.staff,r.body,r.headers['idempotency-key']),false,{schema:{headers:T.Object({'idempotency-key':S.Id})}});
  route('GET','/sales',undefined,S.List,async(r:any)=>paged(`select s.*, i.provider, i.network, i.reference payment_reference from wifi.manual_sales s
    left join wifi.payment_intents i on i.sale_id=s.id
-   where ($1::boolean or s.cashier_id=$2) and (s.receipt_number ilike $3 or s.customer_phone ilike $3 or i.reference ilike $3)`,[r.staff.role==='ADMIN',r.staff.id,'%'+(r.query.q||'')+'%'],r.query),false,{schema:{querystring:S.Paging}});
+   where ($1::boolean or s.cashier_id=$2) and (s.receipt_number ilike $3 or s.customer_phone ilike $3 or i.reference ilike $3)`,[seesAllSales(r.staff.role),r.staff.id,'%'+(r.query.q||'')+'%'],r.query),false,{schema:{querystring:S.Paging}});
  route('GET','/sales/:id',undefined,T.Object({...S.Row.properties,items:T.Array(S.Row)},{additionalProperties:false}),async(r:any)=>sales.saleDetail(r.staff,r.params.id),false,{schema:{params:S.Params}});
  route('POST','/sales/:id/print',T.Object({},{additionalProperties:false}),S.SecretRows,async(r:any)=>({items:await sales.reveal(r.staff,{sale_id:r.params.id},'SALE_PRINTED')}),false,{schema:{params:S.Params},config:{rateLimit:{max:30,timeWindow:'1 minute'}}});
  route('POST','/sales/:id/reverse',S.Reason,S.Row,async(r:any)=>sales.reverse(r.staff,r.params.id,r.body.reason),true,{schema:{params:S.Params}});
@@ -70,7 +73,7 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
  s.session_seconds::float8,s.upload_bytes::text,s.download_bytes::text,g.client_mac,v.code_mask,v.package_name,g.proposed_expires_at,
  case when s.stopped_at is not null then 'STOPPED' when g.state='REVOKED' then 'REVOKED_PENDING_DISCONNECT' when g.proposed_expires_at<=now() then 'EXPIRED' when s.last_seen_at<now()-interval '3 minutes' then 'STALE' else 'RECENTLY_REPORTED' end session_state
  from wifi.network_sessions s join wifi.access_grants g on g.id=s.grant_id join wifi.vouchers v on v.id=g.voucher_id
- where (v.code_mask ilike $1 or v.package_name ilike $1 or g.client_mac ilike $1)`,['%'+(r.query.q||'')+'%'],r.query),true,{schema:{querystring:S.Paging}});
+ where (v.code_mask ilike $1 or v.package_name ilike $1 or g.client_mac ilike $1)`,['%'+(r.query.q||'')+'%'],r.query),MONEY_ROLES,{schema:{querystring:S.Paging}});
  route('GET','/authorization-attempts',undefined,S.List,async(r:any)=>paged('select id,grant_id,deadline,state,evidence,review_note,reviewed_by,created_at,updated_at from wifi.authorization_attempts where ($1=\'\' or state=$1)',[r.query.state||''],r.query),true,{schema:{querystring:S.Paging}});
  route('POST','/access-grants/:id/revoke',S.Reason,S.OK,async(r:any)=>access.revoke(r.staff,r.params.id,r.body.reason),true,{schema:{params:S.Params}});
  route('POST','/authorization-attempts/:id/review',T.Object({decision:T.Union([T.Literal('ACCEPTED'),T.Literal('REJECTED')]),reason:T.String({minLength:10,maxLength:500})},{additionalProperties:false}),S.OK,async(r:any)=>access.review(r.staff,r.params.id,r.body),true,{schema:{params:S.Params}});
@@ -79,7 +82,7 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
  const inventory=async()=> (await pool.query("select count(*) filter(where inventory_state='AVAILABLE')::int stock,count(*) filter(where inventory_state='SOLD' and g.id is null)::int sold_unused,count(*) filter(where g.state='ACTIVE' and g.proposed_expires_at>now())::int active,count(*) filter(where g.state='NEEDS_REVIEW')::int needs_review from wifi.vouchers v left join wifi.access_grants g on g.voucher_id=v.id")).rows[0];
  route('GET','/dashboard',undefined,S.Row,async(r:any)=>r.staff.role==='ADMIN'?{...await totals(),...await inventory()}:await inventory());
  route('GET','/reports/sales',undefined,S.Row,async(r:any)=>totals(r.query.from,r.query.to),true,{schema:{querystring:S.Paging}});
- route('GET','/reports/revenue',undefined,S.RevenueSummary,async(r:any)=>revenueSummary(r.query.from,r.query.to),true,{schema:{querystring:S.RevenueQuery}});
+ route('GET','/reports/revenue',undefined,S.RevenueSummary,async(r:any)=>revenueSummary(r.query.from,r.query.to),MONEY_ROLES,{schema:{querystring:S.RevenueQuery}});
  route('GET','/reports/inventory',undefined,S.Row,inventory,true);
  // Daily buckets in shop time, zero-filled so a quiet day is a gap at zero
  // rather than a missing point the chart would interpolate straight through.
@@ -93,7 +96,7 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
     coalesce((select count(*) from wifi.manual_sale_items i join wifi.manual_sales s on s.id=i.sale_id where (s.created_at at time zone 'Africa/Dar_es_Salaam')::date=d),0)::int vouchers_sold
    from span order by d`,[days])).rows;
   return {items:rows.map(v=>({day:v.day,gross_tzs:v.gross_tzs,net_tzs:v.gross_tzs-v.reversed_tzs,vouchers_sold:v.vouchers_sold}))};
- },true,{schema:{querystring:S.TrendQuery}});
+ },MONEY_ROLES,{schema:{querystring:S.TrendQuery}});
  // Revenue by package. Capped at ten bars: past that a ranked bar chart stops
  // being readable, and the remainder is rolled into one "Other" row.
  route('GET','/reports/by-package',undefined,S.PackageBreakdown,async(r:any)=>{
@@ -105,9 +108,16 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
   if(rows.length<=10)return {items:rows};
   const rest=rows.slice(10).reduce((a,v)=>({vouchers:a.vouchers+v.vouchers,revenue_tzs:a.revenue_tzs+v.revenue_tzs}),{vouchers:0,revenue_tzs:0});
   return {items:[...rows.slice(0,10),{package_name:'Other',...rest}]};
- },true,{schema:{querystring:S.TrendQuery}});
- route('GET','/staff',undefined,S.List,async(r:any)=>paged('select id,display_name,role,enabled,created_at from wifi.staff_profiles where display_name ilike $1',['%'+(r.query.q||'')+'%'],r.query),true,{schema:{querystring:S.Paging}});
- route('PATCH','/staff/:id',T.Object({role:T.Union([T.Literal('ADMIN'),T.Literal('CASHIER')]),enabled:T.Boolean()},{additionalProperties:false}),S.Row,async(r:any)=>tx(async db=>{requireValue(r.params.id!==r.staff.id,409,'Ask another administrator to change your own access');await db.query('select pg_advisory_xact_lock(884421)');const p=(await db.query('update wifi.staff_profiles set role=$2,enabled=$3 where id=$1 returning id,display_name,role,enabled',[r.params.id,r.body.role,r.body.enabled])).rows[0];requireValue(p,404,'Staff member not found');await audit(db,r.staff.id,'STAFF_ACCESS_CHANGED',p.id,r.body);return p;}),true,{schema:{params:S.Params}});
+ },MONEY_ROLES,{schema:{querystring:S.TrendQuery}});
+ route('GET','/staff',undefined,S.List,async(r:any)=>paged("select id,display_name,role,enabled,email,invited_at,activated_at,created_at from wifi.staff_profiles where display_name ilike $1 or coalesce(email,'') ilike $1",['%'+(r.query.q||'')+'%'],r.query),true,{schema:{querystring:S.Paging}});
+ route('PATCH','/staff/:id',S.StaffAccessInput,S.Row,async(r:any)=>tx(async db=>{requireValue(r.params.id!==r.staff.id,409,'Ask another administrator to change your own access');await db.query('select pg_advisory_xact_lock(884421)');const p=(await db.query('update wifi.staff_profiles set role=$2,enabled=$3 where id=$1 returning id,display_name,role,enabled',[r.params.id,r.body.role,r.body.enabled])).rows[0];requireValue(p,404,'Staff member not found');await audit(db,r.staff.id,'STAFF_ACCESS_CHANGED',p.id,r.body);return p;}),true,{schema:{params:S.Params}});
+ // Inviting staff. An administrator names a person and a role; the person gets
+ // an email with a one-time link and chooses their own password there. The
+ // activate call is the person's own, made from that page once it is done.
+ route('GET','/staff/invites',undefined,S.StaffInvites,async()=>staffAccounts.inviteStatus(),true);
+ route('POST','/staff/invite',S.StaffInviteInput,S.Row,async(r:any)=>staffAccounts.invite(r.staff,r.body),true,{config:{rateLimit:{max:10,timeWindow:'1 minute'}}});
+ route('POST','/staff/:id/invite',T.Object({},{additionalProperties:false}),S.OK,async(r:any)=>staffAccounts.resendInvite(r.staff,r.params.id),true,{schema:{params:S.Params},config:{rateLimit:{max:10,timeWindow:'1 minute'}}});
+ route('POST','/staff/activate',T.Object({},{additionalProperties:false}),S.OK,async(r:any)=>staffAccounts.activate(r.staff));
  route('GET','/audit',undefined,S.List,async(r:any)=>paged("select a.id,a.actor_id,a.action,a.entity_id,a.created_at,coalesce(s.display_name,'') display_name from wifi.audit_logs a left join wifi.staff_profiles s on s.id=a.actor_id",[],r.query),true,{schema:{querystring:S.Paging}});
  const integrationSchema=T.Object({mode:T.String(),message:T.String(),last_check:T.Union([T.String(),T.Null()]),ok:T.Union([T.Boolean(),T.Null()]),capabilities:T.Object({mode:T.String(),expiry:T.String(),profile:T.Optional(T.String()),lookup:T.String(),disconnect:T.String(),reconciliation:T.String(),rateLimits:T.Boolean()})});
  registerNetwork(route as any);
