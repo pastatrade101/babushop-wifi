@@ -139,7 +139,7 @@ export async function webhook(rawBody:Buffer|string,headers:Record<string,string
   values($1,$2,$3,$4,$5,$6) on conflict (provider,event_id) do nothing returning id`,
   [intent?.id||null,provider!.name,event.id,event.type,event.status,event.raw as object])).rows[0];
  if(!recorded)return {ok:true};              // Replay: already handled.
- if(!intent)return {ok:true};                // Not ours; stored for audit only.
+ if(!intent){await forwardCallback(rawBody,headers,event.reference);return {ok:true};} // Not ours: stored for audit, passed on.
  if(provider!.isPaid(event.status)){
   // Never trust the callback's amount over our own record.
   requireValue(event.amount===null||Math.round(event.amount)===intent.amount_tzs,400,'Amount does not match the purchase');
@@ -213,4 +213,23 @@ export async function attempts(query:{page?:number;q?:string;state?:string}){
   order by i.created_at desc limit 26 offset $3`,
   [query.q?'%'+query.q+'%':'',query.state||'',(page-1)*25])).rows;
  return {items:rows.slice(0,25),page,has_more:rows.length>25};
+}
+
+/**
+ * The settling partner sends every callback for our source tag here, and this
+ * shop is not the only system behind that tag. A callback that matches none of
+ * our purchases is handed on, byte for byte, to PAYMENT_FORWARD_URL (the other
+ * platform's own callback address, secret included). The outcome is audited;
+ * a failed hand-off keeps the stored event here for a manual replay.
+ */
+export async function forwardCallback(rawBody:Buffer|string,headers:Record<string,string|undefined>,reference:string|null){
+ const target=(process.env.PAYMENT_FORWARD_URL||'').trim();
+ if(!target)return;
+ const body=Buffer.isBuffer(rawBody)?rawBody.toString('utf8'):String(rawBody);
+ let status=0,detail='';
+ try{
+  const response=await fetch(target,{method:'POST',headers:{'content-type':headers['content-type']||'application/json'},body,signal:AbortSignal.timeout(10000)});
+  status=response.status;detail=(await response.text()).slice(0,200);
+ }catch(error){detail=(error as Error).message.slice(0,200);}
+ await audit(pool,null,'PAYMENT_CALLBACK_FORWARDED',null,{reference,status,ok:status>=200&&status<300,detail}).catch(()=>{});
 }
