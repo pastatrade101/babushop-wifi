@@ -34,14 +34,34 @@ optimism would permanently burn stock on every abandoned checkout.
 Webhook replays are idempotent — `payment_events` has `unique (provider,
 event_id)`, and a duplicate event inserts nothing and issues nothing.
 
-## The voucher code is never in a URL
+## Automatic connection after confirmed payment
 
 The buyer's browser holds an opaque **claim token**; only its HMAC digest is
-stored. The code is returned over `POST /api/v1/portal/purchase/status`, once,
-after the intent is `PAID`. Nothing about the code travels in a query string, a
-redirect, an email or the webhook. The token lives in `sessionStorage`, so
-reopening the page in a different browser cannot retrieve someone else's code —
-the screen says so and directs them to the attendant.
+stored. The code is returned over `POST /api/v1/portal/purchase/status` only
+after the intent is `PAID`. The payment confirmation page then automatically
+opens `http://10.78.0.1/login` with the voucher in the URL fragment (`#code=…`).
+The existing router page clears that fragment, fills in the voucher and submits
+the CHAP login. Customers staying on the shop Wi-Fi do not need to press Connect.
+AzamPay checkout and callback verification are unchanged.
+
+The fragment is not sent in HTTP requests, keeping the code out of query strings
+and HTTP request logs. The waiting page checks until the server reports a final
+payment state and checks immediately when the customer returns from the PIN
+prompt. Pending, failed and refund-due payments never initiate a login.
+
+On confirmed payment the page shows the voucher, a "write it down or copy it"
+reminder and a 10-second countdown, then connects by itself -- no tap needed.
+The pause matters: once the router page takes over, this page is gone, and the
+hotspot has no auto-login cookie, so any later disconnect needs the code again.
+It also gives a customer who is already connected on another voucher (whom the
+router answers with "You're good to go" instead of logging in again) the chance
+to keep the new code for when their current time ends.
+
+The claim stays in `localStorage` after payment, so reopening `/buy/done` in the
+same browser -- after the phone's sign-in window has closed, or in another tab --
+shows the paid voucher again with a retry link. A per-tab marker in
+`sessionStorage` stops a redirect loop. A different browser cannot retrieve the
+code; the attendant can look up the paid sale and reveal it.
 
 ## Setup
 
@@ -76,8 +96,8 @@ window — not by a staff token. Signature failures return 401 and issue nothing
 ### 3. Allow purchases before Wi-Fi login
 
 Customers can use the shop's internet to purchase even with no mobile data bundle.
-The intended flow is **Wi-Fi sign-in → Buy a voucher → Snippe mobile money →
-copy the paid code → Wi-Fi sign-in**. The SIM still needs mobile-network signal
+The intended flow is **Wi-Fi sign-in → Buy a voucher → approve mobile money →
+automatic Wi-Fi login**. The SIM still needs mobile-network signal
 and sufficient mobile-money balance to approve the payment prompt. Keep the
 purchase in the same browser/window until the voucher appears; changing browsers
 loses the browser's claim token.
@@ -155,7 +175,9 @@ The generated pages now include **Buy a voucher**, linking directly to
 `https://jiachie-wifi.com/buy` in the same window. Uploading to Files root does
 not replace `hotspot/login.html`. Rebuild/deploy the web service with your normal
 Compose workflow for the cloud portal's buy link and the purchase-success
-screen's return-to-Wi-Fi link; no new migration or payment credentials are needed.
+screen's automatic return to Wi-Fi; no new migration or payment credentials are needed.
+The router's `login.html` must contain the `#code` fragment auto-submit handler
+already included by `scripts/build-hotspot.ts`.
 
 To undo only these exceptions (existing sessions may last until they close):
 
@@ -183,9 +205,12 @@ change does not modify the catalogue or existing voucher terms.
    Choose a deliberately approved low-cost package (Snippe minimum 500 TZS)
    and complete one real mobile-money payment. Do not treat page loading as a
    successful payment test.
-4. Confirm the return page displays a code and the sale appears as
-   `MOBILE` / `SELF_SERVICE`. Copy/write down the code before tapping
-   **Open Wi-Fi sign-in**. Enter it, then verify internet, speed and fixed expiry.
+4. After confirmed payment, verify that the page shows the voucher for about
+   10 seconds, then opens the router login and connects **without tapping
+   Connect or entering a voucher**. Confirm the sale
+   appears as `MOBILE` / `SELF_SERVICE`, then verify internet, speed and fixed
+   expiry. If the router is unreachable, return to `/buy/done` in the same browser
+   to recover the paid voucher and retry; do not pay again.
 5. Abandon a separate unpaid checkout; confirm its reservation returns to stock
    after the 15-minute hold expires. Do not retry a charged purchase blindly if
    the code screen is lost; use the attendant's sales/payment records.

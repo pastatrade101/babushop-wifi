@@ -27,3 +27,18 @@ pnpm test:e2e
 ```
 
 The browser flow logs in, creates a package, generates and prints stock, rejects an unsold code, records a cash sale, checks print styles, activates a sold code through the worker and checks mobile layout. The separate portal test checks local-only asset requests and a visible mock banner. Live AP expiry, controller cookies, session-rejection semantics, TLS trust and operator capabilities require the separate hardware commissioning checklist.
+
+The purchase auto-connect browser tests use mocked payment-status responses and
+intercept every router request. They require only a local web server and Chrome;
+they do not create purchases, charge money or touch the router/database. With
+the web app running locally, run:
+
+```sh
+pnpm exec playwright test tests/browser/purchase-connect.spec.ts
+```
+
+These cover automatic handoff after confirmed payment, confirmations after more
+than three minutes, returning from the PIN prompt, non-overlapping checks,
+failed/refund-due payments, temporary errors and same-tab voucher recovery.
+Real router authorization still requires the customer-device acceptance test in
+`docs/self-service-purchase.md`.

@@ -17,7 +17,7 @@ const picked=$derived(data.items.find((item:any)=>item.id===chosen)??null);
 // localStorage, not sessionStorage: the payment completes on the server when
 // AzamPay calls back, whether or not this page is still open, so the token has
 // to survive the tab closing or the phone locking while the PIN prompt is up.
-// It is removed the moment the code has been shown.
+// After payment it moves to this tab's sessionStorage for connection recovery.
 //
 // Two destinations, because the two payment shapes end differently: a hosted
 // page takes the buyer away, while a push leaves them here and asks their
@@ -41,7 +41,7 @@ $effect(()=>{
   {:else if data.items.length===0}
    <p class="notice">Vifurushi vyote vimeisha kwa sasa. Tafadhali muulize muhudumu.</p>
   {:else}
-   <p class="lead">Chagua kifurushi, thibitisha malipo kwenye simu yako, na vocha yako itatokea hapa hapa.</p>
+   <p class="lead">Chagua kifurushi na thibitisha malipo kwenye simu yako. Malipo yakikamilika, utaunganishwa kwenye Wi-Fi moja kwa moja.</p>
    <p class="tip"><Icon name="wifi" size={15}/><span>Baki kwenye Wi-Fi hii na usifunge ukurasa huu. Huhitaji bando.</span></p>
    {#if form?.error}<p class="notice error" role="alert">{messageSw(form.error,'Imeshindikana kuanza malipo. Jaribu tena au lipa kwa muhudumu.')}</p>{/if}
    <form method="POST" use:enhance={()=>{busy=true;return async({update})=>{await update({reset:false});busy=false;};}}>
