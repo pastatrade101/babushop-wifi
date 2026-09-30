@@ -5,7 +5,7 @@ const code='ABCD-EFGH-JKLM-NPQR';
 const routerLogin='http://10.78.0.1/login';
 const paid={status:'PAID',code,package_name:'Test Wi-Fi',message:null};
 // How long the paid voucher stays on screen before the page connects by itself.
-const SAVE_MS=10000;
+const SAVE_MS=3000;
 
 // Only browser fixtures: no checkout, payment, database or real router request.
 test.beforeEach(async({page,baseURL})=>{
@@ -42,9 +42,9 @@ test('confirmed payment shows the voucher to save, then opens MikroTik login wit
  await expect(page.getByText('Iandike au inakili sasa.')).toBeVisible();
  await expect(page.getByText(/Tunakuunganisha kwenye Wi-Fi baada ya sekunde \d+/)).toBeVisible();
  await expect(page.getByText('Kama tayari umeunganishwa kwa vocha nyingine')).toBeVisible();
- await page.clock.runFor(SAVE_MS-2000);
+ await page.clock.runFor(SAVE_MS-1000);
  expect(requests.some(url=>url.startsWith(routerLogin))).toBe(false);
- await page.clock.runFor(2000);
+ await page.clock.runFor(1000);
  await expect(page).toHaveURL(`${routerLogin}#code=ABCDEFGHJKLMNPQR`);
  expect(requests.filter(url=>url.startsWith(routerLogin))).toEqual([routerLogin]);
  expect(requests.every(url=>!url.includes(claim)&&!url.includes(code)&&!url.includes('ABCDEFGHJKLMNPQR'))).toBe(true);
@@ -133,7 +133,7 @@ test('the voucher stays recoverable in this browser after connecting, without a 
  // The claim is still in localStorage, so a new tab or a closed sign-in window can recover it too.
  const stored=await page.evaluate(()=>({local:localStorage.getItem('jw_claim'),tab:sessionStorage.getItem('jw_claim')}));
  expect(stored).toEqual({local:claim,tab:claim});
- await page.getByRole('link',{name:'Jaribu kuunganisha tena →'}).click();
+ await page.getByRole('link',{name:/Jaribu kuunganisha tena/}).click();
  await expect(page).toHaveURL(`${routerLogin}#code=ABCDEFGHJKLMNPQR`);
 });
 
@@ -147,4 +147,58 @@ test('a purchase using the legacy session claim connects automatically',async({p
  confirmed=true;
  await page.reload();
  await connectsAfterCountdown(page);
+});
+
+test('a slow payment never offers a second purchase that would replace this one',async({page})=>{
+ let calls=0;
+ await page.clock.install();
+ await page.route('**/buy/status',route=>{calls++;return route.fulfill({json:{status:'PENDING'}});});
+ await page.goto('/buy/done');
+ await expect(page.getByRole('heading',{name:'Tunathibitisha malipo yako…'})).toBeVisible();
+ // A check every two seconds; the hint appears once the wait passes 75 seconds.
+ for(let i=0;i<40;i++){
+  const before=calls;
+  await page.clock.runFor(2000);
+  await expect.poll(()=>calls).toBeGreaterThan(before);
+ }
+ await expect(page.getByText('Bado hujapata ombi la PIN?')).toBeVisible();
+ await expect(page.getByText(/Usinunue tena kwa sasa/)).toBeVisible();
+ await expect(page.getByRole('link',{name:/Anza upya/})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Angalia tena'})).toBeVisible();
+});
+
+test('the help dialog still opens on a phone whose browser has no <dialog>',async({page})=>{
+ let checked=false;
+ await page.addInitScript(()=>{delete (HTMLDialogElement.prototype as any).showModal;});
+ await page.route('**/buy/status',route=>{checked=true;return route.fulfill({json:{status:'PENDING'}});});
+ await page.goto('/buy/done');
+ // The page's scripts are running once it asks for the payment status.
+ await expect.poll(()=>checked).toBe(true);
+ await expect(page.getByRole('heading',{name:'Msaada kidogo?'})).toBeHidden();
+ await page.getByRole('button',{name:'Unahitaji msaada?'}).click();
+ await expect(page.getByRole('heading',{name:'Msaada kidogo?'})).toBeVisible();
+ await page.getByRole('button',{name:'Sawa'}).click();
+ await expect(page.getByRole('heading',{name:'Msaada kidogo?'})).toBeHidden();
+});
+
+// These two need packages from the local API behind the preview; without it the page shows no checkout bar.
+test('on a phone, the checkout opens without <dialog> support and the bar never covers the footer',async({page})=>{
+ await page.setViewportSize({width:375,height:480});
+ await page.addInitScript(()=>{delete (HTMLDialogElement.prototype as any).showModal;});
+ await page.goto('/buy');
+ await page.waitForLoadState('networkidle');
+ const bar=page.getByRole('button',{name:'Endelea'});
+ test.skip(!(await bar.isVisible()),'the local API is not serving packages');
+ // The footer links stay tappable at the very bottom of the page.
+ await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));
+ for(const name of ['Faragha','Masharti ya matumizi']){
+  const link=page.getByRole('button',{name});
+  const box=(await link.boundingBox())!;
+  const hit=await page.evaluate(([x,y])=>document.elementFromPoint(x,y)?.textContent?.trim(),[box.x+box.width/2,box.y+box.height/2]);
+  expect(hit,name).toBe(name);
+ }
+ await bar.click();
+ await expect(page.getByRole('heading',{name:'Kamilisha malipo.'}).last()).toBeVisible();
+ await page.getByRole('button',{name:'Funga malipo'}).click();
+ await expect(page.locator('dialog.mobile-checkout-sheet')).toBeHidden();
 });

@@ -1,6 +1,7 @@
 import {pool,audit,requireValue,Problem,type Staff} from './index.ts';
 import {connectionFromEnv} from '../../network/src/index.ts';
 import {fileWriterFromEnv,hotspotPath,checkContents,replaceFile,FileWriteError,sha256,TEXT_TYPES,MAX_BYTES,type MikroTikFileWriter} from '../../network/src/files.ts';
+import {renderHotspotPages,hotspotBrandFromEnv,HOTSPOT_FILES} from '../../network/src/hotspot-pages.ts';
 
 // Hotspot pages: the one thing the portal may change on the router.
 //
@@ -33,7 +34,7 @@ export async function hotspotDirectory():Promise<string>{
 
 export async function fileCapability(){
  const enabled=fileUploadsEnabled();
- return {enabled,directory:enabled?await hotspotDirectory().catch(()=>null):null,types:TEXT_TYPES,max_bytes:MAX_BYTES};
+ return {enabled,directory:enabled?await hotspotDirectory().catch(()=>null):null,types:TEXT_TYPES,max_bytes:MAX_BYTES,pages:[...HOTSPOT_FILES]};
 }
 
 // One write per file at a time. The API runs as a single process, so a chain
@@ -82,6 +83,45 @@ export async function uploadHotspotFile(staff:Staff,relative:string,contents:str
  let name:string;
  try{name=hotspotPath(directory,relative);}catch(error){throw new Problem(400,(error as Error).message);}
  return put(staff,name,contents,['BEFORE_UPLOAD','UPLOADED']);
+}
+
+/** The shop's branded pages, generated from the server's own settings: the same set `pnpm hotspot:build` writes. */
+export function brandedPages(env:NodeJS.ProcessEnv=process.env){
+ try{return renderHotspotPages(hotspotBrandFromEnv(env));}
+ catch(error){throw new Problem(409,(error as Error).message);}
+}
+
+/** Write every branded page to the router in one go, the way WinBox would, but keeping each file it replaces. */
+export async function publishBrandedPages(staff:Staff){
+ if(!fileUploadsEnabled())throw new Problem(503,NOT_SET_UP);
+ const pages=brandedPages();
+ const directory=await hotspotDirectory();
+ const items=[];
+ // theme.js first: each page loads it, so none goes live before it is there.
+ for(const file of HOTSPOT_FILES){
+  const contents=pages[file];
+  items.push(await put(staff,hotspotPath(directory,file),contents,['BEFORE_UPLOAD','UPLOADED'],{branded:true}));
+ }
+ return {items,missing:await missingHelperFiles(directory)};
+}
+
+/**
+ * RouterOS's own files that the branded pages rely on. They live in the same
+ * folder and are not ours to write: md5.js is what the CHAP login needs,
+ * rlogin.html and error.html carry the router's own sign-in outcomes. When the
+ * folder was emptied they are gone and every redirect ends in a 404 until the
+ * shop runs "/ip hotspot reset-html" in WinBox (and publishes again).
+ */
+export const HELPER_FILES=['md5.js','rlogin.html','error.html','errors.txt'];
+async function missingHelperFiles(directory:string):Promise<string[]>{
+ const writer=fileWriterFromEnv();
+ if(!writer)return [];
+ try{
+  const missing=[];
+  for(const file of HELPER_FILES)if(!(await writer.find(hotspotPath(directory,file))))missing.push(file);
+  return missing;
+ }catch{return [];}
+ finally{writer.close();}
 }
 
 export async function fileVersions(name:string){

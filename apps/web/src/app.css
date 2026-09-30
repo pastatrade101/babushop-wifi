@@ -340,4 +340,24 @@ html{scroll-padding-top:100px}
 .role-guide strong{color:var(--ink);font-size:.82rem}
 @media (max-width:900px){.invite-form{grid-template-columns:1fr 1fr}.invite-form .button{grid-column:1/-1}.role-guide{grid-template-columns:1fr}}
 @media (max-width:560px){.invite-form{grid-template-columns:1fr}}
+/* ── Customer pages (PortalShell, /buy, /buy/done) ─────────────────────────
+   Designed on a zeroed baseline: no default margins, bullets or link colours,
+   and none of the portal's form styling. Weighted as one class, (0,1,0): that
+   outranks the portal's element rules such as label{flex-direction:column},
+   p{margin} and strong{font-weight:600}, which are (0,0,1), and never a
+   page's own scoped rules, which are at least (0,1,1). */
+:is(.page,.dialog,.mobile-checkout-sheet) :where(h1,h2,h3,h4,h5,h6,p,ul,ol,dl,dd,figure,blockquote,fieldset,legend){margin:0}
+:is(.page,.dialog,.mobile-checkout-sheet) :where(p){color:inherit}
+:is(.page,.dialog,.mobile-checkout-sheet) :where(ul,ol){list-style:none;padding:0}
+:is(.page,.dialog,.mobile-checkout-sheet) :where(fieldset){padding:0;border:0;border-radius:0;min-width:0}
+:is(.page,.dialog,.mobile-checkout-sheet) :where(a){color:inherit;text-decoration:none}
+:is(.page,.dialog,.mobile-checkout-sheet) :where(img,svg){display:block}
+:is(.page,.dialog,.mobile-checkout-sheet) :where(h1,h2,h3,h4,h5,h6){font-size:inherit;font-weight:inherit;letter-spacing:0;line-height:inherit}
+:is(.page,.dialog,.mobile-checkout-sheet) :where(strong,b){font-weight:bolder}
+:is(.page,.dialog,.mobile-checkout-sheet) :where(label){display:block;flex-direction:row;margin:0;font-size:inherit;font-weight:inherit;gap:0}
+:is(.page,.dialog,.mobile-checkout-sheet) :where(input){width:auto;min-height:0;background:transparent;border:0;border-radius:0;padding:0;color:inherit;font-size:inherit}
+:is(.page,.dialog,.mobile-checkout-sheet) :where(button){min-height:0;padding:0;border:0;background:none;color:inherit;font-size:inherit;font-weight:inherit;border-radius:0}
+/* <dialog> on a browser that predates it: hidden until opened, then laid over the page (see $lib/modal). */
+:is(.dialog,.mobile-checkout-sheet):not([open]){display:none}
+:is(.dialog,.mobile-checkout-sheet)[data-fallback][open]{position:fixed;inset:0;margin:auto;height:fit-content;max-height:calc(100vh - 24px);overflow-y:auto;z-index:50;box-shadow:0 0 0 100vmax #031e46a6,0 24px 70px #00183660}
 

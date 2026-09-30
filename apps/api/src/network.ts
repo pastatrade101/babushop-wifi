@@ -56,6 +56,7 @@ export function registerNetwork(route:Route){
  // A 60 KB page grows when JSON-escaped, so this one route takes a larger body.
  route('GET','/network/router/files/capability',undefined,S.RouterFileCapability,async()=>routerFiles.fileCapability(),true);
  route('POST','/network/router/files',S.RouterFileUpload,S.RouterFileResult,async(r:any)=>routerFiles.uploadHotspotFile(r.staff,r.body.name,r.body.contents),true,{bodyLimit:262144,config:{rateLimit:{max:12,timeWindow:'1 minute'}}});
+ route('POST','/network/router/pages/publish',undefined,S.RouterFileResults,async(r:any)=>routerFiles.publishBrandedPages(r.staff),true,{config:{rateLimit:{max:4,timeWindow:'1 minute'}}});
  route('GET','/network/router/files/versions',undefined,S.RouterFileVersions,async(r:any)=>routerFiles.fileVersions(r.query.name),true,{schema:{querystring:S.RouterFileVersionsQuery}});
  route('POST','/network/router/files/versions/:id/restore',undefined,S.RouterFileResult,async(r:any)=>routerFiles.restoreFileVersion(r.staff,r.params.id),true,{schema:{params:S.Params},config:{rateLimit:{max:12,timeWindow:'1 minute'}}});
 }

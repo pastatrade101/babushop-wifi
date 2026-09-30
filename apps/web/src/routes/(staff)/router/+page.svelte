@@ -102,7 +102,7 @@ let finding=$state(false);
 let open=$state<string|null>(null);
 let sortKey=$state<string|null>(null);
 let sortDir=$state<1|-1>(1);
-$effect(()=>{menuId;untrack(()=>{query='';open=null;sortKey=null;sortDir=1;uploading=false;upMessage=null;picked=null;saveAs='';});});
+$effect(()=>{menuId;untrack(()=>{query='';open=null;sortKey=null;sortDir=1;uploading=false;publishing=false;upMessage=null;pubMessage=null;picked=null;saveAs='';});});
 function sortBy(col:string){if(sortKey===col)sortDir=sortDir===1?-1:1;else{sortKey=col;sortDir=1;}}
 const rows=$derived.by(()=>{
  const items=((view?.items??[]) as Row[]).map((row,index)=>({row,index}));
@@ -124,7 +124,7 @@ const itemTitle=(row:Row)=>row.name||row.address||row['dst-address']||row['mac-a
 // ── Hotspot uploads (Files window) ─────────────────────────────────────────
 // The portal's one write to the router. The panel says exactly what an upload
 // will do before it is sent; the server keeps whatever it replaces.
-type Capability={enabled:boolean;directory:string|null;types:string[];max_bytes:number};
+type Capability={enabled:boolean;directory:string|null;types:string[];max_bytes:number;pages:string[]};
 const files=$derived(data.files as Capability|null);
 const uploadDir=$derived(files?.enabled&&files.directory?files.directory:null);
 let uploading=$state(false);
@@ -148,6 +148,24 @@ const upload:SubmitFunction=({cancel})=>{
   else if(result.type==='failure')upMessage={ok:false,text:d?.message??'Upload failed.'};
   else if(result.type==='redirect')goto(result.location);
   else upMessage={ok:false,text:'Upload failed.'};
+ };
+};
+
+// Publishing the branded pages: the same set `pnpm hotspot:build` writes, sent
+// to the router by the server instead of by hand through WinBox. The panel
+// names every file first; the button in it is the confirmation.
+let publishing=$state(false);
+let pubBusy=$state(false);
+let pubMessage=$state<{ok:boolean;text:string}|null>(null);
+const publish:SubmitFunction=()=>{
+ pubBusy=true;pubMessage=null;
+ return async({result,update})=>{
+  pubBusy=false;
+  const d=(result as any).data?.publish;
+  if(result.type==='success'){pubMessage={ok:true,text:d?.message??'Published.'};history=null;await update({reset:true});}
+  else if(result.type==='failure')pubMessage={ok:false,text:d?.message??'Publishing failed.'};
+  else if(result.type==='redirect')goto(result.location);
+  else pubMessage={ok:false,text:'Publishing failed.'};
  };
 };
 
@@ -315,10 +333,12 @@ function recall(e:KeyboardEvent){
       <div class="win-toolbar">
        {#if menuId==='files'&&uploadDir}
         <span class="rw" title="In this window the portal can put text files into the hotspot folder. Everything else stays read-only."><Icon name="alert" size={14}/>Hotspot uploads on</span>
-        <button type="button" class="tool-button" class:on={uploading} aria-pressed={uploading} onclick={()=>{uploading=!uploading;open=null;upMessage=null;}}><Icon name="plus" size={14}/>Upload to {uploadDir}/</button>
+        <button type="button" class="tool-button" class:on={uploading} aria-pressed={uploading} onclick={()=>{uploading=!uploading;publishing=false;open=null;upMessage=null;}}><Icon name="plus" size={14}/>Upload to {uploadDir}/</button>
+        <button type="button" class="tool-button" class:on={publishing} aria-pressed={publishing} title="Write the branded login, status and logout pages, generated from the server's settings, into {uploadDir}/. Every replaced file is kept in History." onclick={()=>{publishing=!publishing;uploading=false;open=null;pubMessage=null;}}><Icon name="wifi" size={14}/>Publish branded pages</button>
        {:else}
         <span class="ro" title="The portal cannot change the router. Changes still go through WinBox."><Icon name="lock" size={14}/>Read-only</span>
         {#if menuId==='files'&&files&&!files.enabled}<span class="muted-note" title="Create the portal-files account on the router and add its username and password to the server to turn uploads on.">Uploads not set up</span>{/if}
+        {#if menuId==='files'&&files}<button type="button" class="tool-button" class:on={publishing} aria-pressed={publishing} onclick={()=>{publishing=!publishing;open=null;pubMessage=null;}}><Icon name="wifi" size={14}/>Publish branded pages</button>{/if}
        {/if}
        {#if finding}<input type="search" placeholder="Find…" aria-label="Find in this list" bind:value={query}>{/if}
        <span class="spacer"></span>
@@ -327,7 +347,7 @@ function recall(e:KeyboardEvent){
       </div>
      {/if}
 
-     <div class="win-body" class:split={!!selected||(uploading&&!!uploadDir)}>
+     <div class="win-body" class:split={!!selected||(uploading&&!!uploadDir)||(publishing&&!!files)}>
       {#if isTerminal}
        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
        <div class="terminal" onclick={()=>input?.focus()}>
@@ -385,6 +405,30 @@ function recall(e:KeyboardEvent){
          </form>
          {#if upMessage}<p class="result" class:ok={upMessage.ok} role="status">{upMessage.text}</p>{/if}
          <p class="note">{files.types.map(t=>'.'+t).join(' ')} files up to 60 KB, into this folder only. Every upload is recorded with your name.</p>
+        </aside>
+       {:else if publishing&&files}
+        <aside class="detail" aria-label="Publish the branded pages">
+         <div class="detail-head"><strong>Publish branded pages</strong><button type="button" aria-label="Close publish" onclick={()=>publishing=false}><Icon name="close" size={15}/></button></div>
+         {#if !uploadDir}
+          <div class="upload-form">
+           <p class="impact">Publishing writes the shop's sign-in, status and logout pages ({files.pages.join(', ')}) straight to the router, so they no longer go through WinBox. It needs its own router account first.</p>
+           <ol class="setup-steps">
+            <li>In WinBox › New Terminal, create the account (choose a strong password):<pre>/user group add name=portal-files policy=read,write,ftp,rest-api
+/user add name=portal-files group=portal-files address=10.77.0.1/32 password=…</pre></li>
+            <li>Put the username and password on the server as MIKROTIK_FILES_USERNAME and MIKROTIK_FILES_PASSWORD, and restart the API.</li>
+            <li>Come back here: Publish and Upload are then on.</li>
+           </ol>
+           {#if files.enabled&&!files.directory}<p class="impact warn">Uploads are set up, but the router did not say which folder its hotspot uses. Press Refresh; if it stays, check the router's connection.</p>{/if}
+          </div>
+         {:else}
+         <form method="POST" action="?/publish" use:enhance={publish} class="upload-form">
+          <p class="impact">Writes {files.pages.length} files into <strong>{uploadDir}/</strong>: {files.pages.join(', ')}. Each file that is there now is saved first and can be put back from its History.</p>
+          <p class="impact warn">Customers see the new sign-in page the moment they connect. The pages are generated from the server's brand, seller phone and buy link, the same as <code>pnpm hotspot:build</code>.</p>
+          <button class="small-button" disabled={pubBusy}>{pubBusy?'Publishing…':`Publish ${files.pages.length} files`}</button>
+         </form>
+         {#if pubMessage}<p class="result" class:ok={pubMessage.ok} role="status">{pubMessage.text}</p>{/if}
+         <p class="note">The router keeps its own md5.js and error pages; they are checked, not replaced. Every publish is recorded with your name.</p>
+         {/if}
         </aside>
        {:else if selected}
         <aside class="detail" aria-label="Item details">
@@ -531,6 +575,8 @@ function recall(e:KeyboardEvent){
  .upload-form .small-button{align-self:flex-start}
  .impact{margin:0;font-size:.78rem;background:var(--surface-muted);border-radius:6px;padding:8px 10px;color:var(--ink)}
  .impact.warn{background:var(--warning-soft);color:var(--warning)}
+ .setup-steps{margin:0;padding-left:18px;font-size:.78rem;display:flex;flex-direction:column;gap:8px;color:var(--ink)}
+ .setup-steps pre{margin:6px 0 0;padding:8px 10px;border-radius:6px;background:var(--surface-muted);font-size:.72rem;white-space:pre-wrap;overflow-wrap:anywhere;user-select:all}
  .result{margin:8px 14px;font-size:.8rem;color:var(--danger)}
  .result.ok{color:var(--success)}
  .note{margin:8px 14px 12px;font-size:.74rem;color:var(--muted)}

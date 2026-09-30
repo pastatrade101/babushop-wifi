@@ -34,6 +34,18 @@ optimism would permanently burn stock on every abandoned checkout.
 Webhook replays are idempotent — `payment_events` has `unique (provider,
 event_id)`, and a duplicate event inserts nothing and issues nothing.
 
+## The customer pages wear the One Network design
+
+`/buy` and `/buy/done` are the One Network portal: a deep-blue page over a photo,
+the shop's logo and name in the top bar, packages as cards with duration, name,
+price and speed, a voucher panel that hands a counter-bought code to the
+router's sign-in page, and a white checkout with the mobile-money networks as
+tiles, the phone number, a summary and one pay button. On a phone the packages
+become rows behind a Buy / Voucher switch, with a fixed bar for the choice and a
+popup checkout. The router's HotSpot pages take the same frame. The frame lives
+in `apps/web/src/lib/components/PortalShell.svelte`; the seller's number and the
+router's sign-in address come from `WIFI_SELLER_PHONE` and `HOTSPOT_LOGIN_URL`.
+
 ## Automatic connection after confirmed payment
 
 The buyer's browser holds an opaque **claim token**; only its HMAC digest is
@@ -50,7 +62,7 @@ payment state and checks immediately when the customer returns from the PIN
 prompt. Pending, failed and refund-due payments never initiate a login.
 
 On confirmed payment the page shows the voucher, a "write it down or copy it"
-reminder and a 10-second countdown, then connects by itself -- no tap needed.
+reminder and a 3-second countdown, then connects by itself -- no tap needed.
 The pause matters: once the router page takes over, this page is gone, and the
 hotspot has no auto-login cookie, so any later disconnect needs the code again.
 It also gives a customer who is already connected on another voucher (whom the
@@ -163,16 +175,18 @@ hostname from browser requests. Add only a confirmed required host to the shared
 address list; both exceptions then use it. Do not guess wildcards. The Snippe API
 key and webhook secret remain on the server and are never needed on the router.
 
-Rebuild the five branded HotSpot pages:
+Publish the branded HotSpot pages from **Router › Files › Publish branded pages**
+(see `docs/mikrotik-launch.md` for the one-time `portal-files` router account), or
+rebuild them by hand:
 
 ```sh
-WIFI_BRAND="JIACHIE WIFI" pnpm hotspot:build
+pnpm hotspot:build
 ```
 
-Replace `login.html`, `flogin.html`, `alogin.html`, `status.html` and `logout.html`
-**inside `hotspot/`**, preserving `md5.js`, `api.json` and other RouterOS files.
-The generated pages now include **Buy a voucher**, linking directly to
-`https://jiachie-wifi.com/buy` in the same window. Uploading to Files root does
+and replace `theme.js`, `login.html`, `flogin.html`, `alogin.html`, `status.html` and
+`logout.html` **inside `hotspot/`**, preserving `md5.js`, `api.json` and other RouterOS files.
+The pages include **Nunua vocha**, linking to `HOTSPOT_BUY_URL` (by default
+`https://jiachie-wifi.com/buy`) in the same window; a private or local address is never used. Uploading to Files root does
 not replace `hotspot/login.html`. Rebuild/deploy the web service with your normal
 Compose workflow for the cloud portal's buy link and the purchase-success
 screen's automatic return to Wi-Fi; no new migration or payment credentials are needed.
@@ -206,7 +220,7 @@ change does not modify the catalogue or existing voucher terms.
    and complete one real mobile-money payment. Do not treat page loading as a
    successful payment test.
 4. After confirmed payment, verify that the page shows the voucher for about
-   10 seconds, then opens the router login and connects **without tapping
+   3 seconds, then opens the router login and connects **without tapping
    Connect or entering a voucher**. Confirm the sale
    appears as `MOBILE` / `SELF_SERVICE`, then verify internet, speed and fixed
    expiry. If the router is unreachable, return to `/buy/done` in the same browser

@@ -57,15 +57,28 @@ WireGuard must be up before this service can bind. It restarts if binding/DB sta
 
 ## 3. Install branded customer pages
 
-Build on your checkout:
+**From the portal (preferred).** Open **Router › Files** and press **Publish branded pages**. The server generates `theme.js`, `login.html`, `flogin.html`, `status.html`, `logout.html` and `alogin.html` from its own settings (`WIFI_BRAND`, `WIFI_SUPPORT_CONTACT`, `WIFI_SELLER_PHONE`, `HOTSPOT_LOGIN_URL`, and the buy link below) and writes them into the hotspot's own folder. Each file that is replaced is saved first and can be put back from its **History**; each write is read back, and a file the router did not store exactly is rolled back. The router's own `md5.js`, `rlogin.html`, `error.html` and `errors.txt` are checked, never written: if they are missing, the portal says to run `/ip hotspot reset-html` in WinBox and publish again.
 
-```sh
-WIFI_BRAND="JIACHIE WIFI" pnpm hotspot:build
+Publishing needs its own router account, separate from the read-only one. Create it once in **WinBox › New Terminal** (choose a strong password), then put the two values on the server as `MIKROTIK_FILES_USERNAME` and `MIKROTIK_FILES_PASSWORD` in `.env.api` and restart the API:
+
+```
+/user group add name=portal-files policy=read,write,ftp,rest-api
+/user add name=portal-files group=portal-files address=10.77.0.1/32 password=…
 ```
 
-Optionally set `WIFI_SUPPORT_CONTACT` at build time. Pages are generated at `dist/hotspot/` and need no external assets/fonts. Changing the portal's brand later requires rebuilding/re-uploading these pages.
+Until then the Files window stays read-only and **Publish branded pages** shows these steps.
 
-In WinBox Files, download a backup of the existing HotSpot folder. Upload the generated `login.html`, `flogin.html`, `status.html`, `logout.html`, `alogin.html` to that SAME directory, preserving its existing `md5.js` and other RouterOS files. If the directory is `flash/hotspot`, upload there and keep the matching profile html-directory. Do not reset HTML after uploading: that would overwrite the branded pages. The supplied pages use the confirmed customer gateway 10.78.0.1. A different deployment must adjust that address in `scripts/build-hotspot.ts` and the public web portal link.
+The pages' **Nunua vocha** button opens `HOTSPOT_BUY_URL` when set, otherwise `APP_ORIGIN/buy` when that is a public https address, otherwise `https://jiachie-wifi.com/buy`. A private or `127.0.0.1` address is never used (a phone on the hotspot cannot open it), and an explicit private `HOTSPOT_BUY_URL` is refused.
+
+**By hand (fallback).** Build on your checkout:
+
+```sh
+pnpm hotspot:build
+```
+
+The script prints the buy link it used. Pages are generated at `dist/hotspot/` and need no external assets or fonts. Changing the portal's brand later requires publishing or re-uploading these pages.
+
+In WinBox Files, download a backup of the existing HotSpot folder. Upload the generated `theme.js`, `login.html`, `flogin.html`, `status.html`, `logout.html`, `alogin.html` to that SAME directory, preserving its existing `md5.js` and other RouterOS files. If the directory is `flash/hotspot`, upload there and keep the matching profile html-directory. Do not reset HTML after uploading: that would overwrite the branded pages. The supplied pages use the confirmed customer gateway 10.78.0.1. A different deployment must adjust that address in `scripts/build-hotspot.ts` and the public web portal link.
 
 Customers see the branded code-only page locally; the cloud `/portal` page directs customers onto shop Wi-Fi and to the local login. Voucher codes are never sent to a browser-supplied router URL or trusted based on query-string MAC addresses.
 
@@ -140,7 +153,9 @@ Set `.env.web` to `NETWORK_PROVIDER=mikrotik`, `OMADA_MODE=live`, `WIFI_BRAND="J
 
 The staff portal reads its mode from the authenticated API `/runtime` endpoint. The web environment alone cannot switch the badge to live. Deploy API and web together for this release. A separately running RADIUS service can authenticate vouchers while the portal API is still in test mode; the banner does not disable that service. “Live mode” describes configuration, and “Router reachable” describes the last read-only check. Neither is a claim that expiry or hardware commissioning passed.
 
-For refreshed customer branding, rebuild `WIFI_BRAND="JIACHIE WIFI" pnpm hotspot:build` and replace only the five generated HTML files **inside the router’s `hotspot/` directory**, preserving `md5.js`, `api.json`, and other router files. These pages use inline styles/icons with no external dependencies. Login accepts codes with or without hyphens. The compact layouts fit ordinary phone screens; smaller viewports, keyboards or enlarged text may still scroll so content is never clipped.
+For refreshed customer branding, press **Publish branded pages** in Router › Files, or rebuild with `pnpm hotspot:build` and replace only the generated files **inside the router’s `hotspot/` directory**, preserving `md5.js`, `api.json`, and other router files. These pages use inline styles/icons with no external dependencies. Login accepts codes with or without hyphens. The compact layouts fit ordinary phone screens; smaller viewports, keyboards or enlarged text may still scroll so content is never clipped.
+
+The pages are in Swahili and in the One Network portal design, the same as `/buy`, so a customer sees one design from the sign-in prompt to the receipt. They use the phone's own font and load `theme.js`, which is part of the published set, for the light and dark themes.
 
 The legacy variable name OMADA_MODE remains for compatibility; it selects mock/live for the chosen NETWORK_PROVIDER. The worker no longer dispatches Omada-style authorization for live MikroTik. Browser calls to the old redemption endpoint are rejected in MikroTik live mode.
 

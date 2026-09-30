@@ -75,9 +75,10 @@ export const RouterMenuRows=T.Object({menu:T.Object({id:T.String(),label:T.Strin
 export const RouterOverview=Nested;
 // Hotspot page uploads: the only router write. Names are relative to the
 // hotspot folder and checked again on the server; contents are text.
-export const RouterFileCapability=T.Object({enabled:T.Boolean(),directory:T.Union([T.String(),T.Null()]),types:T.Array(T.String()),max_bytes:T.Integer()},{additionalProperties:false});
+export const RouterFileCapability=T.Object({enabled:T.Boolean(),directory:T.Union([T.String(),T.Null()]),types:T.Array(T.String()),max_bytes:T.Integer(),pages:T.Array(T.String())},{additionalProperties:false});
 export const RouterFileUpload=T.Object({name:T.String({minLength:1,maxLength:130}),contents:T.String({maxLength:70000})},{additionalProperties:false});
 export const RouterFileResult=T.Object({name:T.String(),size:T.Integer(),sha256:T.String(),replaced:T.Boolean(),version_id:Id},{additionalProperties:false});
+export const RouterFileResults=T.Object({items:T.Array(RouterFileResult),missing:T.Array(T.String())},{additionalProperties:false});
 export const RouterFileVersionsQuery=T.Object({name:T.String({maxLength:200})},{additionalProperties:false});
 export const RouterFileVersions=T.Object({items:T.Array(T.Object({id:Id,name:T.String(),reason:T.String(),size:T.Integer(),sha256:T.String(),created_at:T.String(),created_by:T.Union([T.String(),T.Null()])},{additionalProperties:false}))},{additionalProperties:false});
 export const RouterCommandInput=T.Object({command:T.String({maxLength:200})},{additionalProperties:false});

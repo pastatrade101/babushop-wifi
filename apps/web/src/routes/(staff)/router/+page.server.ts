@@ -44,6 +44,20 @@ export const actions={
    return {upload:{ok:true,message:result.replaced?`Replaced ${result.name}. The previous version is in its History.`:`Created ${result.name}.`}};
   }catch(e){return fail(502,{upload:{ok:false,message:(e as Error).message}});}
  },
+ // The branded pages, written to the router in one go. Each replaced file is kept.
+ publish:async(event:any)=>{
+  try{
+   // About 40 router calls one after another (backup, write, read back per file), so allow two minutes.
+   const result=await api(event,'/network/router/pages/publish',{},undefined,{},120000);
+   const missing:string[]=result.missing??[];
+   if(missing.length)return fail(502,{publish:{ok:false,message:`Published ${result.items.length} file(s), but the router's own HotSpot files are missing from the folder (${missing.join(', ')}), so customers would get a 404 instead of the login page. In WinBox › New Terminal run "/ip hotspot reset-html", then publish again.`}});
+   return {publish:{ok:true,message:`Published ${result.items.length} file(s) to the router. Customers see the new pages now; each replaced file is in its History.`}};
+  }catch(e){
+   const message=(e as Error).message;
+   if(/abort|timeout/i.test(message))return fail(504,{publish:{ok:false,message:'The router is still taking the files. Wait a minute, then check the pages’ History before publishing again.'}});
+   return fail(502,{publish:{ok:false,message}});
+  }
+ },
  restore:async(event:any)=>{
   const id=String((await event.request.formData()).get('id')??'');
   if(!uuid.test(id))return fail(400,{restore:{ok:false,message:'Unknown version.'}});
