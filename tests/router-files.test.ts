@@ -1,5 +1,5 @@
 import {it,expect} from 'vitest';
-import {hotspotPath,checkContents,replaceFile,FileWriteError,type FileStore,type RouterFile} from '../packages/network/src/files.ts';
+import {hotspotPath,checkContents,replaceFile,FileWriteError,MikroTikFileWriter,type FileStore,type RouterFile} from '../packages/network/src/files.ts';
 
 it('puts files only inside the hotspot folder, and only text ones',()=>{
  expect(hotspotPath('hotspot','login.html')).toBe('hotspot/login.html');
@@ -83,4 +83,24 @@ it('does not call a line-ending difference a failed upload',async()=>{
  const r=router({});
  r.store.contents=async()=>'line one\nline two\n';
  await expect(replaceFile(r.store,'hotspot/a.txt','line one\r\nline two',async()=>{})).resolves.toMatchObject({replaced:false});
+});
+
+it('reads a larger page by its name, the only way RouterOS 7.18 hands it over',async()=>{
+ const writer=new MikroTikFileWriter({baseUrl:'https://router.test/',username:'portal-files',password:'x'});
+ const asked:any[]=[];
+ (writer as any).request=async(method:string,path:string,body:any)=>{
+  asked.push({method,path,body});
+  // By .id the router answers with an empty list; by name it returns the text.
+  return body?.number==='hotspot/login.html'?{ret:'<html>old page</html>'}:[];
+ };
+ const big:RouterFile={id:'*1F01020C',name:'hotspot/login.html',size:8513};
+ expect(await writer.contents(big)).toBe('<html>old page</html>');
+ expect(asked[0]).toEqual({method:'POST',path:'file/get',body:{number:'hotspot/login.html','value-name':'contents'}});
+ // Small files come straight from the listing, with no extra request.
+ expect(await writer.contents({...big,size:40,contents:'small'})).toBe('small');
+ expect(asked).toHaveLength(1);
+ // A router that gives nothing back by any route means "cannot back up".
+ (writer as any).request=async()=>[];
+ expect(await writer.contents(big)).toBeNull();
+ writer.close();
 });

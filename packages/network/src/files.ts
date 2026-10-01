@@ -78,13 +78,15 @@ export class MikroTikFileWriter{
   return {id:row['.id'],name:row.name,size:Number(row.size??0),contents:typeof row.contents==='string'?row.contents:undefined,'last-modified':row['last-modified']};
  }
  /**
-  * A file's text. The listing carries it only for small files; anything larger
-  * is fetched with /file get, which RouterOS serves up to 60 KB. Null when the
-  * router will not hand it over -- callers treat that as "cannot back up".
+  * A file's text. The listing carries it only for small files (about 4 KB);
+  * anything larger is fetched with /file get, which RouterOS serves up to 60 KB.
+  * RouterOS 7.18 answers that get only when the file is named by its name; by
+  * its .id it returns an empty list. Null when the router will not hand it
+  * over -- callers treat that as "cannot back up".
   */
  async contents(file:RouterFile):Promise<string|null>{
   if(file.contents!==undefined)return file.contents;
-  for(const body of [{number:file.id,'value-name':'contents'},{'.id':file.id,'value-name':'contents'}]){
+  for(const body of [{number:file.name,'value-name':'contents'},{number:file.id,'value-name':'contents'},{'.id':file.id,'value-name':'contents'}]){
    try{const out:any=await this.request('POST','file/get',body);if(typeof out?.ret==='string')return out.ret;}catch{/* try the other spelling */}
   }
   return null;
