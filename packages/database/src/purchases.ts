@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {pool,tx,audit,requireValue,Problem,SITE} from './index.ts';
 import {digest,decrypt,present,token} from './crypto.ts';
 import {paymentProvider,webhookUrl,callbackShape} from '../../payments/src/index.ts';
-import {enqueueSalePaid} from './notifications.ts';
+import {enqueueSalePaid,enqueueVoucherSms,voucherSmsQueued} from './notifications.ts';
 
 // Self-service voucher purchase by mobile money, alongside the cash counter.
 //
@@ -113,6 +113,8 @@ async function settle(intentId:string){
    packageName:voucher.package_name,durationMinutes:Number(voucher.duration_minutes),
    downloadMbps:voucher.download_mbps==null?null:Number(voucher.download_mbps),uploadMbps:voucher.upload_mbps==null?null:Number(voucher.upload_mbps),
    provider:intent.provider,network:intent.network??null,phone:intent.customer_phone??null,paidAt:new Date(sale.created_at).toISOString()});
+  // The buyer's code by SMS to the number that paid, as a copy of what the receipt page shows.
+  await enqueueVoucherSms(db,{saleId:sale.id,phone:intent.customer_phone??null});
   return (await db.query('select * from wifi.payment_intents where id=$1',[intentId])).rows[0];
  });
 }
@@ -184,7 +186,7 @@ export async function status(claimToken:string){
    :current.status==='PENDING'?'Waiting for your payment.':'This purchase did not complete. No money was taken; you can try again.'};
  const sold=(await pool.query('select v.code_encrypted,v.package_name,v.duration_minutes from wifi.manual_sale_items i join wifi.vouchers v on v.id=i.voucher_id where i.sale_id=$1',[current.sale_id])).rows[0];
  requireValue(sold,409,'Payment received. Please ask the attendant for your code.');
- return {status:'PAID',code:present(decrypt(sold.code_encrypted)),package_name:sold.package_name,duration_minutes:sold.duration_minutes,message:null};
+ return {status:'PAID',code:present(decrypt(sold.code_encrypted)),package_name:sold.package_name,duration_minutes:sold.duration_minutes,message:null,sms:await voucherSmsQueued(current.sale_id)};
 }
 
 /** Housekeeping: free stock held by checkouts that were never completed. */

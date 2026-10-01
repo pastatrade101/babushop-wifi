@@ -7,7 +7,7 @@ import {messageSw} from '$lib/sw';
 let {data}=$props();
 // loading | pending | paid | failed | refund | lost
 let phase=$state('loading');
-let code=$state('');let packageName=$state('');let message=$state('');let copied=$state(false);
+let code=$state('');let packageName=$state('');let bySms=$state(false);let message=$state('');let copied=$state(false);
 let connecting=$state(false);let checking=$state(false);
 let timer:ReturnType<typeof setTimeout>;let disposed=false;
 // Seconds the paid voucher stays on screen before connecting by itself. Once
@@ -60,7 +60,7 @@ async function check(){
   const result=await response.json();
   if(disposed)return;
   if(!response.ok)throw new Error(result.error||'');
-  message=result.message||'';packageName=result.package_name||'';
+  message=result.message||'';packageName=result.package_name||'';bySms=result.sms===true;
   if(result.status==='PAID'){
    if(typeof result.code!=='string'||!/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{16}$/.test(result.code.replace(/-/g,'')))throw new Error('');
    code=result.code;phase='paid';
@@ -109,7 +109,7 @@ onMount(()=>{
  {/if}
  {#if packageName}<p>{packageName}</p>{/if}
  <div class="summary"><span class="voucher-code">{code}</span><button type="button" class="copy" onclick={copy}>{copied?'Imenakiliwa ✓':'Nakili vocha'}</button></div>
- <p class="small"><strong>Iandike au inakili sasa.</strong> Utaihitaji kuunganisha tena ukikatika. Haitumwi kwa SMS.</p>
+ <p class="small"><strong>Iandike au inakili sasa.</strong> Utaihitaji kuunganisha tena ukikatika.{#if bySms}{' '}Tunaituma pia kwa SMS kwenye namba uliyolipia.{:else}{' '}Haitumwi kwa SMS.{/if}</p>
  <p class="small muted">Kama tayari umeunganishwa kwa vocha nyingine, hifadhi hii na uiingize muda wako wa sasa ukiisha.</p>
  {#if connecting}
   <button type="button" class="secondary-action" onclick={hold}>Subiri, nataka kuiandika kwanza</button>

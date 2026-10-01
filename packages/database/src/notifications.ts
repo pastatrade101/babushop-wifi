@@ -1,5 +1,6 @@
 import {pool,audit,SITE,type DB} from './index.ts';
-import {emailConfig,sendEmail,renderSalePaid,maskPhone,type EmailConfig,type SalePaid} from '../../notifications/src/index.ts';
+import {decrypt,present} from './crypto.ts';
+import {emailConfig,sendEmail,renderSalePaid,maskPhone,smsConfig,smsNumber,sendSms,renderVoucherSms,type EmailConfig,type SalePaid,type SmsConfig} from '../../notifications/src/index.ts';
 
 // Owner alerts go through an outbox. The row is written inside the same
 // transaction that records the sale, so an email exists exactly when a sale
@@ -56,7 +57,7 @@ async function today(db:DB,saleId:string){
 export async function deliverOne(config:EmailConfig|null=emailConfig(),fetchImpl:typeof fetch=fetch,db:DB=pool):Promise<boolean>{
  if(!config)return false;
  const row=(await db.query(`update wifi.notification_outbox set attempts=attempts+1,next_attempt_at=now()+make_interval(mins=>$1)
-  where id=(select id from wifi.notification_outbox where status='PENDING' and next_attempt_at<=now() order by next_attempt_at limit 1 for update skip locked)
+  where id=(select id from wifi.notification_outbox where kind='SALE_PAID' and status='PENDING' and next_attempt_at<=now() order by next_attempt_at limit 1 for update skip locked)
   returning *`,[LEASE_MINUTES])).rows[0];
  if(!row)return false;
  const sale=row.payload as SalePaid;
@@ -81,4 +82,69 @@ export async function deliverOne(config:EmailConfig|null=emailConfig(),fetchImpl
  await audit(db,null,'NOTIFICATION_FAILED',row.id,{kind:row.kind,sale_id:sale.saleId,status:result.status,error:result.error});
  console.error(`Sale email for ${sale.receipt} was not delivered: ${result.error}`);
  return true;
+}
+
+// ── The buyer's voucher by SMS ───────────────────────────────────────────────
+
+/**
+ * Queue the buyer's SMS. Same rules as the sale email: inside settle()'s
+ * transaction behind a savepoint, nothing queued while SMS is off, one row per
+ * sale. The row holds the sale id and the number, never the code.
+ */
+export async function enqueueVoucherSms(db:DB,sale:{saleId:string;phone:string|null},config:SmsConfig|null=smsConfig()){
+ if(!config)return;
+ const to=smsNumber(sale.phone);
+ if(!to)return;
+ await db.query('savepoint voucher_sms');
+ try{
+  await db.query(`insert into wifi.notification_outbox(kind,dedupe_key,recipients,payload) values('VOUCHER_SMS',$1,$2,$3)
+   on conflict (kind,dedupe_key) do nothing`,[sale.saleId,[to],{saleId:sale.saleId}]);
+  await db.query('release savepoint voucher_sms');
+ }catch{
+  await db.query('rollback to savepoint voucher_sms');
+  console.error('Could not queue the voucher SMS; the sale itself is recorded.');
+ }
+}
+
+/** Whether this sale's code is on its way by SMS (queued or sent), for the buyer's receipt page. */
+export async function voucherSmsQueued(saleId:string,db:DB=pool):Promise<boolean>{
+ try{return !!(await db.query("select 1 from wifi.notification_outbox where kind='VOUCHER_SMS' and dedupe_key=$1 and status<>'FAILED'",[saleId])).rows[0];}
+ catch{return false;}
+}
+
+/**
+ * Send at most one due SMS, leased the same way as the emails. The code is
+ * read and decrypted here, at send time, and goes nowhere but the request body.
+ */
+export async function deliverSmsOne(config:SmsConfig|null=smsConfig(),fetchImpl:typeof fetch=fetch,db:DB=pool):Promise<boolean>{
+ if(!config)return false;
+ const row=(await db.query(`update wifi.notification_outbox set attempts=attempts+1,next_attempt_at=now()+make_interval(mins=>$1)
+  where id=(select id from wifi.notification_outbox where kind='VOUCHER_SMS' and status='PENDING' and next_attempt_at<=now() order by next_attempt_at limit 1 for update skip locked)
+  returning *`,[LEASE_MINUTES])).rows[0];
+ if(!row)return false;
+ const saleId=String(row.payload?.saleId??row.dedupe_key);
+ const fail=async(status:number,error:string)=>{
+  await db.query("update wifi.notification_outbox set status='FAILED',last_error=$2 where id=$1",[row.id,error]);
+  await audit(db,null,'NOTIFICATION_FAILED',row.id,{kind:row.kind,sale_id:saleId,status,error});
+  console.error(`Voucher SMS for sale ${saleId} was not delivered: ${error}`);
+  return true;
+ };
+ const sold=(await db.query(`select v.code_encrypted,v.package_name from wifi.manual_sale_items i join wifi.vouchers v on v.id=i.voucher_id where i.sale_id=$1 limit 1`,[saleId])).rows[0];
+ if(!sold)return fail(0,'The sale has no voucher to send');
+ let text:string;
+ // A code that cannot be read (a changed key, damaged data) will not read on a retry either. The message never holds the code.
+ try{text=renderVoucherSms({brand:process.env.WIFI_BRAND||'JIACHIE WIFI',code:present(decrypt(sold.code_encrypted)),packageName:sold.package_name||'',sellerPhone:process.env.WIFI_SELLER_PHONE||'0758342054'});}
+ catch{return fail(0,'Could not read the voucher code');}
+ const result=await sendSms(row.recipients[0],text,config,fetchImpl);
+ if(result.ok){
+  await db.query("update wifi.notification_outbox set status='SENT',sent_at=now(),provider_message_id=$2,last_error=null where id=$1",[row.id,result.id]);
+  return true;
+ }
+ if(result.retryable&&row.attempts<MAX_ATTEMPTS){
+  // 2, 4, 8 ... minutes, capped at two hours: long enough for the shop to top up an empty balance.
+  await db.query('update wifi.notification_outbox set next_attempt_at=now()+make_interval(mins=>$2),last_error=$3 where id=$1',
+   [row.id,Math.min(2**row.attempts,120),result.error]);
+  return true;
+ }
+ return fail(result.status,result.error);
 }
