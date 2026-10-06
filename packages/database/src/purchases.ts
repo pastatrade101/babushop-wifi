@@ -141,7 +141,7 @@ export async function webhook(rawBody:Buffer|string,headers:Record<string,string
   values($1,$2,$3,$4,$5,$6) on conflict (provider,event_id) do nothing returning id`,
   [intent?.id||null,provider!.name,event.id,event.type,event.status,event.raw as object])).rows[0];
  if(!recorded)return {ok:true};              // Replay: already handled.
- if(!intent){await forwardCallback(rawBody,headers,event.reference);return {ok:true};} // Not ours: stored for audit, passed on.
+ if(!intent){await forwardCallback(rawBody,headers,event.reference,event.ownReference);return {ok:true};} // Not ours: stored for audit, passed on.
  if(provider!.isPaid(event.status)){
   // Never trust the callback's amount over our own record.
   requireValue(event.amount===null||Math.round(event.amount)===intent.amount_tzs,400,'Amount does not match the purchase');
@@ -218,20 +218,41 @@ export async function attempts(query:{page?:number;q?:string;state?:string}){
 }
 
 /**
+ * Where a callback that is not ours belongs. Each system behind our source tag
+ * names its payments its own way, and the callback carries that name back
+ * (ownReference). PAYMENT_FORWARD_ROUTES maps name prefixes to addresses, comma
+ * separated: "MKC-=https://connect.example/webhooks/payments/azam/<token>" sends
+ * Makutano Connect's own payments to Connect. Anything else goes to
+ * PAYMENT_FORWARD_URL, the Wi-Fi platform, whose shops start their payments with
+ * their own receipt prefix (ONE NETWORK's with ONE-).
+ */
+export function forwardTarget(ownReference:string|null,env:Record<string,string|undefined>=process.env):string|null{
+ const own=(ownReference||'').trim().toUpperCase();
+ for(const entry of (env.PAYMENT_FORWARD_ROUTES||'').split(',')){
+  const at=entry.indexOf('=');if(at<1)continue;
+  const prefix=entry.slice(0,at).trim().toUpperCase(),url=entry.slice(at+1).trim();
+  if(prefix&&url&&own.startsWith(prefix))return url;
+ }
+ return (env.PAYMENT_FORWARD_URL||'').trim()||null;
+}
+
+/**
  * The settling partner sends every callback for our source tag here, and this
  * shop is not the only system behind that tag. A callback that matches none of
- * our purchases is handed on, byte for byte, to PAYMENT_FORWARD_URL (the other
- * platform's own callback address, secret included). The outcome is audited;
- * a failed hand-off keeps the stored event here for a manual replay.
+ * our purchases is handed on, byte for byte, to the system that owns it
+ * (forwardTarget), so AzamPay's signature and every field arrive as sent. The
+ * outcome is audited by host only, since each address carries that system's
+ * secret; a failed hand-off keeps the stored event here for a manual replay.
  */
-export async function forwardCallback(rawBody:Buffer|string,headers:Record<string,string|undefined>,reference:string|null){
- const target=(process.env.PAYMENT_FORWARD_URL||'').trim();
+export async function forwardCallback(rawBody:Buffer|string,headers:Record<string,string|undefined>,reference:string|null,ownReference:string|null=null){
+ const target=forwardTarget(ownReference);
  if(!target)return;
+ let host='invalid address';try{host=new URL(target).host;}catch{/* audited as such */}
  const body=Buffer.isBuffer(rawBody)?rawBody.toString('utf8'):String(rawBody);
  let status=0,detail='';
  try{
   const response=await fetch(target,{method:'POST',headers:{'content-type':headers['content-type']||'application/json'},body,signal:AbortSignal.timeout(10000)});
   status=response.status;detail=(await response.text()).slice(0,200);
  }catch(error){detail=(error as Error).message.slice(0,200);}
- await audit(pool,null,'PAYMENT_CALLBACK_FORWARDED',null,{reference,status,ok:status>=200&&status<300,detail}).catch(()=>{});
+ await audit(pool,null,'PAYMENT_CALLBACK_FORWARDED',null,{reference,own_reference:ownReference,target:host,status,ok:status>=200&&status<300,detail}).catch(()=>{});
 }
