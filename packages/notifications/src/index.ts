@@ -6,3 +6,5 @@ export {renderStaffInvite,ROLE_COPY} from './invite-email.ts';
 export type {StaffInvite,InviteContext} from './invite-email.ts';
 export {smsConfig,smsNumber,sendSms,smsBalance,renderVoucherSms,toGsm,isGsm,SMS_LIMIT} from './mosms.ts';
 export type {SmsConfig,SmsResult,VoucherSms} from './mosms.ts';
+export {whatsappConfig,whatsappSetupIssue,saleFields,renderSaleWhatsApp,saleWhatsAppBody,sendWhatsApp,SALE_FIELDS} from './connect-whatsapp.ts';
+export type {WhatsAppConfig,WhatsAppResult,SaleField} from './connect-whatsapp.ts';

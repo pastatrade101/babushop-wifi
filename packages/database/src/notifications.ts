@@ -1,6 +1,6 @@
 import {pool,audit,SITE,type DB} from './index.ts';
 import {decrypt,present} from './crypto.ts';
-import {emailConfig,sendEmail,renderSalePaid,maskPhone,smsConfig,smsNumber,sendSms,renderVoucherSms,type EmailConfig,type SalePaid,type SmsConfig} from '../../notifications/src/index.ts';
+import {emailConfig,sendEmail,renderSalePaid,maskPhone,smsConfig,smsNumber,sendSms,renderVoucherSms,whatsappConfig,saleWhatsAppBody,sendWhatsApp,type EmailConfig,type SalePaid,type SaleContext,type SmsConfig,type WhatsAppConfig} from '../../notifications/src/index.ts';
 
 // Owner alerts go through an outbox. The row is written inside the same
 // transaction that records the sale, so an email exists exactly when a sale
@@ -35,6 +35,16 @@ export async function enqueueSalePaid(db:DB,sale:Omit<SalePaid,'customer'>&{phon
  }
 }
 
+/** The brand, the portal link and today's tally the sale alerts carry, worked out at send time. */
+async function saleContext(db:DB,sale:SalePaid):Promise<SaleContext>{
+ const origin=(process.env.APP_ORIGIN||'').replace(/\/+$/,'');
+ return {
+  brand:process.env.WIFI_BRAND||'JIACHIE WIFI',
+  portalUrl:`${origin}/payments?q=${encodeURIComponent(sale.reference)}`,
+  ...await today(db,sale.saleId),
+ };
+}
+
 /** Sales count and takings so far today, up to and including this sale, so a retried email says the same thing. */
 async function today(db:DB,saleId:string){
  const row=(await db.query(`with this as (select created_at from wifi.manual_sales where id=$1)
@@ -61,12 +71,7 @@ export async function deliverOne(config:EmailConfig|null=emailConfig(),fetchImpl
   returning *`,[LEASE_MINUTES])).rows[0];
  if(!row)return false;
  const sale=row.payload as SalePaid;
- const origin=(process.env.APP_ORIGIN||'').replace(/\/+$/,'');
- const email=renderSalePaid(sale,{
-  brand:process.env.WIFI_BRAND||'JIACHIE WIFI',
-  portalUrl:`${origin}/payments?q=${encodeURIComponent(sale.reference)}`,
-  ...await today(db,sale.saleId),
- });
+ const email=renderSalePaid(sale,await saleContext(db,sale));
  const result=await sendEmail({from:config.from,to:row.recipients,...email,idempotencyKey:'sale-paid/'+row.id},config.apiKey,fetchImpl);
  if(result.ok){
   await db.query("update wifi.notification_outbox set status='SENT',sent_at=now(),provider_message_id=$2,last_error=null where id=$1",[row.id,result.id]);
@@ -147,4 +152,58 @@ export async function deliverSmsOne(config:SmsConfig|null=smsConfig(),fetchImpl:
   return true;
  }
  return fail(result.status,result.error);
+}
+
+// ── The owner's sale alert by WhatsApp, through Makutano Connect ─────────────
+
+/**
+ * Queue the owner's WhatsApp alert: the same sale, the same rules as the email
+ * -- inside settle()'s transaction behind a savepoint, nothing queued while it
+ * is off, the customer's number masked. One row per owner number, so each
+ * number's delivery is tracked and retried on its own.
+ */
+export async function enqueueSaleWhatsApp(db:DB,sale:Omit<SalePaid,'customer'>&{phone:string|null},config:WhatsAppConfig|null=whatsappConfig()){
+ if(!config)return;
+ const {phone,...rest}=sale;
+ const payload:SalePaid={...rest,customer:maskPhone(phone)};
+ await db.query('savepoint sale_whatsapp');
+ try{
+  for(const to of config.to)
+   await db.query(`insert into wifi.notification_outbox(kind,dedupe_key,recipients,payload) values('SALE_WHATSAPP',$1,$2,$3)
+    on conflict (kind,dedupe_key) do nothing`,[`${sale.saleId}:${to}`,[to],payload]);
+  await db.query('release savepoint sale_whatsapp');
+ }catch{
+  await db.query('rollback to savepoint sale_whatsapp');
+  console.error('Could not queue the sale WhatsApp; the sale itself is recorded.');
+ }
+}
+
+/**
+ * Send at most one due WhatsApp alert, leased like the emails. Connect's
+ * Idempotency-Key covers a send that went through but was never recorded: the
+ * body is rebuilt from the stored sale, so a retry is the same request.
+ */
+export async function deliverWhatsAppOne(config:WhatsAppConfig|null=whatsappConfig(),fetchImpl:typeof fetch=fetch,db:DB=pool):Promise<boolean>{
+ if(!config)return false;
+ const row=(await db.query(`update wifi.notification_outbox set attempts=attempts+1,next_attempt_at=now()+make_interval(mins=>$1)
+  where id=(select id from wifi.notification_outbox where kind='SALE_WHATSAPP' and status='PENDING' and next_attempt_at<=now() order by next_attempt_at limit 1 for update skip locked)
+  returning *`,[LEASE_MINUTES])).rows[0];
+ if(!row)return false;
+ const sale=row.payload as SalePaid;
+ const body=saleWhatsAppBody(row.recipients[0],sale,await saleContext(db,sale),config);
+ const result=await sendWhatsApp(body,config,'sale-whatsapp/'+row.id,fetchImpl);
+ if(result.ok){
+  await db.query("update wifi.notification_outbox set status='SENT',sent_at=now(),provider_message_id=$2,last_error=null where id=$1",[row.id,result.id]);
+  return true;
+ }
+ if(result.retryable&&row.attempts<MAX_ATTEMPTS){
+  // 2, 4, 8 ... minutes, capped at two hours: long enough to top up messages or get a template approved.
+  await db.query('update wifi.notification_outbox set next_attempt_at=now()+make_interval(mins=>$2),last_error=$3 where id=$1',
+   [row.id,Math.min(2**row.attempts,120),result.error]);
+  return true;
+ }
+ await db.query("update wifi.notification_outbox set status='FAILED',last_error=$2 where id=$1",[row.id,result.error]);
+ await audit(db,null,'NOTIFICATION_FAILED',row.id,{kind:row.kind,sale_id:sale.saleId,status:result.status,error:result.error});
+ console.error(`Sale WhatsApp for ${sale.receipt} was not delivered: ${result.error}`);
+ return true;
 }

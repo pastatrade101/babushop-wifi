@@ -24,7 +24,7 @@ const BRAND='#487fff',DEEP='#3869dd',BLUE_TEXT='#315fce',SOFT='#edf3ff',INK='#11
 
 export const esc=(value:unknown)=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 export const money=(n:number)=>new Intl.NumberFormat('en-TZ').format(Math.round(n||0));
-const when=(iso:string)=>new Intl.DateTimeFormat('en-GB',{dateStyle:'medium',timeStyle:'short',timeZone:'Africa/Dar_es_Salaam'}).format(new Date(iso));
+export const when=(iso:string)=>new Intl.DateTimeFormat('en-GB',{dateStyle:'medium',timeStyle:'short',timeZone:'Africa/Dar_es_Salaam'}).format(new Date(iso));
 
 /**
  * The same wording the portal uses for a package's length. Kept as a copy
@@ -45,9 +45,9 @@ export function maskPhone(phone:string|null):string{
  return `${digits.slice(0,4)} ••• ${digits.slice(-3)}`;
 }
 
-const speed=(down:number|null,up:number|null)=>down&&up?`Up to ${down} Mbps down · ${up} Mbps up`:down?`Up to ${down} Mbps`:'Shared line, no cap';
-const networkLabel=(network:string|null)=>AZAM_NETWORKS.find(n=>n.value===network)?.label??(network?network:'Mobile money');
-const providerLabel=(provider:string)=>({azam:'AzamPay',snippe:'Snippe'} as Record<string,string>)[provider]??provider;
+export const speed=(down:number|null,up:number|null)=>down&&up?`Up to ${down} Mbps down · ${up} Mbps up`:down?`Up to ${down} Mbps`:'Shared line, no cap';
+export const networkLabel=(network:string|null)=>AZAM_NETWORKS.find(n=>n.value===network)?.label??(network?network:'Mobile money');
+export const providerLabel=(provider:string)=>({azam:'AzamPay',snippe:'Snippe'} as Record<string,string>)[provider]??provider;
 
 export function renderSalePaid(sale:SalePaid,context:SaleContext){
  const amount='TZS '+money(sale.amountTzs);

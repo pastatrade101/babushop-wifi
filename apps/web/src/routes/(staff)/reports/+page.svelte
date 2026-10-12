@@ -35,7 +35,7 @@ const ACTIONS:Record<string,[string,string,Tone]>={
  PURCHASE_REFUND_DUE:['Customer refund due','alert','red'],
  PAYMENT_CALLBACK_REJECTED:['Payment callback rejected','alert','red'],
  PAYMENT_CALLBACK_UNCONFIRMED:['Payment callback unconfirmed','alert','amber'],
- NOTIFICATION_FAILED:['Sale email not delivered','alert','amber'],
+ NOTIFICATION_FAILED:['Sale alert or SMS not delivered','alert','amber'],
  BATCH_GENERATED:['Voucher batch generated','batch','blue'],
  BATCH_ISSUED:['Voucher batch issued','batch','blue'],
  BATCH_PRINTED:['Voucher batch printed','batch','blue'],
