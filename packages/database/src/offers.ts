@@ -10,19 +10,26 @@ type OfferRow=OfferTerms&{id:string;name:string;download_mbps:number;upload_mbps
 const COLUMNS=`id,name,starts_at,ends_at,to_char(daily_start,'HH24:MI') daily_start,to_char(daily_end,'HH24:MI') daily_end,download_mbps,upload_mbps,enabled,created_at,updated_at`;
 const iso=(d:Date|string|null)=>d===null?null:new Date(d).toISOString();
 
-function shape(row:OfferRow&{logins?:number;devices?:number},now:Date){
+function shape(row:OfferRow&{logins?:number;devices?:number;sales?:number;revenue_tzs?:number},now:Date){
  const s=offerState(row,now);
  return {id:row.id,name:row.name,starts_at:iso(row.starts_at)!,ends_at:iso(row.ends_at)!,daily_start:row.daily_start,daily_end:row.daily_end,
   download_mbps:row.download_mbps,upload_mbps:row.upload_mbps,enabled:row.enabled,state:s.state,until:iso(s.until),next:iso(s.next),
-  logins:Number(row.logins??0),devices:Number(row.devices??0),created_at:iso(row.created_at)!,updated_at:iso(row.updated_at)!};
+  logins:Number(row.logins??0),devices:Number(row.devices??0),sales:Number(row.sales??0),revenue_tzs:Number(row.revenue_tzs??0),created_at:iso(row.created_at)!,updated_at:iso(row.updated_at)!};
 }
 
 export async function listOffers(){
  const now=new Date();
  const {rows}=await pool.query(`select ${COLUMNS},
    (select count(*) from wifi.free_offer_logins l where l.offer_id=o.id)::int logins,
-   (select count(distinct client_mac) from wifi.free_offer_logins l where l.offer_id=o.id)::int devices
-  from wifi.free_offers o where site_id=$1 order by starts_at desc limit 100`,[SITE]);
+   (select count(distinct client_mac) from wifi.free_offer_logins l where l.offer_id=o.id)::int devices,
+   -- Every sale, at the counter or by phone, from the offer's start until its end (or now), less reversals:
+   -- what the shop took while the offer was bringing people in.
+   s.sales,s.revenue_tzs
+  from wifi.free_offers o
+  cross join lateral (select count(*)::int sales,coalesce(sum(m.total_tzs),0)::float8 revenue_tzs from wifi.manual_sales m
+   where m.site_id=o.site_id and m.created_at>=o.starts_at and m.created_at<least(o.ends_at,now())
+    and not exists(select 1 from wifi.sale_reversals r where r.sale_id=m.id)) s
+  where o.site_id=$1 order by o.starts_at desc limit 100`,[SITE]);
  return {items:rows.map(r=>shape(r,now))};
 }
 
