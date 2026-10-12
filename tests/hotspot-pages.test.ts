@@ -86,7 +86,7 @@ it('never points "Nunua vocha" at a developer machine or a private address',()=>
 
 it('builds the same pages from the environment for the build script and the Publish button',()=>{
  const brand=hotspotBrandFromEnv({APP_ORIGIN:'http://127.0.0.1:5188',HOTSPOT_LOGIN_URL:'http://10.78.0.1/login'});
- expect(brand).toEqual({brand:'JIACHIE WIFI',support:'',sellerPhone:'0758342054',buyUrl:DEFAULT_BUY_URL,statusUrl:'http://10.78.0.1/status'});
+ expect(brand).toEqual({brand:'JIACHIE WIFI',support:'',sellerPhone:'0758342054',buyUrl:DEFAULT_BUY_URL,statusUrl:'http://10.78.0.1/status',offerUrl:'https://jiachie-wifi.com/api/v1/portal/offer'});
  const login=renderHotspotPages(brand)['login.html'];
  expect(login).toContain('href="https://jiachie-wifi.com/buy"');
  expect(login).not.toContain('127.0.0.1');

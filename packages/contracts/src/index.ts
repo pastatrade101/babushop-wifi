@@ -75,6 +75,11 @@ export const RouterMenuRows=T.Object({menu:T.Object({id:T.String(),label:T.Strin
 export const RouterOverview=Nested;
 // Hotspot page uploads: the only router write. Names are relative to the
 // hotspot folder and checked again on the server; contents are text.
+const HHMM=T.Union([T.String({pattern:'^([01][0-9]|2[0-3]):[0-5][0-9]$'}),T.Null()]);
+export const OfferInput=T.Object({name:Text(80),starts_at:T.String({minLength:10,maxLength:40}),ends_at:T.String({minLength:10,maxLength:40}),daily_start:HHMM,daily_end:HHMM,download_mbps:T.Integer({minimum:1,maximum:10000}),upload_mbps:T.Integer({minimum:1,maximum:10000}),enabled:T.Boolean()},{additionalProperties:false});
+export const Offer=T.Object({id:Id,name:T.String(),starts_at:T.String(),ends_at:T.String(),daily_start:T.Union([T.String(),T.Null()]),daily_end:T.Union([T.String(),T.Null()]),download_mbps:T.Integer(),upload_mbps:T.Integer(),enabled:T.Boolean(),state:T.String(),until:T.Union([T.String(),T.Null()]),next:T.Union([T.String(),T.Null()]),logins:T.Integer(),devices:T.Integer(),created_at:T.String(),updated_at:T.String()},{additionalProperties:false});
+export const Offers=T.Object({items:T.Array(Offer)},{additionalProperties:false});
+export const PublicOffer=T.Object({active:T.Boolean(),name:T.Union([T.String(),T.Null()]),ends_at:T.Union([T.String(),T.Null()])},{additionalProperties:false});
 export const RouterFileCapability=T.Object({enabled:T.Boolean(),directory:T.Union([T.String(),T.Null()]),types:T.Array(T.String()),max_bytes:T.Integer(),pages:T.Array(T.String())},{additionalProperties:false});
 export const RouterFileUpload=T.Object({name:T.String({minLength:1,maxLength:130}),contents:T.String({maxLength:70000})},{additionalProperties:false});
 export const RouterFileResult=T.Object({name:T.String(),size:T.Integer(),sha256:T.String(),replaced:T.Boolean(),version_id:Id},{additionalProperties:false});

@@ -5,6 +5,7 @@ import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
 import {Type as T} from '@sinclair/typebox';
 import {createClient} from '@supabase/supabase-js';
+import * as offers from '../../../packages/database/src/offers.ts';
 import {pool,tx,audit,Problem,requireValue,SITE,type Staff} from '../../../packages/database/src/index.ts';
 import * as sales from '../../../packages/database/src/sales.ts';
 import * as access from '../../../packages/database/src/access.ts';
@@ -133,6 +134,13 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
  // The shop tells the page how to pay, not who takes the money: `flow` decides
  // whether the buyer is sent away or prompted on their handset, and `networks`
  // is only non-empty when we have to ask which one to push to.
+ // Free Wi-Fi offers. The sign-in page on the router (http://10.78.0.1) asks
+ // whether one is on before anyone is online, so this one answer is readable
+ // from any origin; it carries only the offer's name and end time.
+ route('GET','/portal/offer',undefined,S.PublicOffer,async(_r:any,reply:any)=>{reply.header('Access-Control-Allow-Origin','*');return offers.publicOffer();},false,{config:{rateLimit:{max:600,timeWindow:'1 minute'}}});
+ route('GET','/offers',undefined,S.Offers,async()=>offers.listOffers(),true);
+ route('POST','/offers',S.OfferInput,S.Offer,async(r:any)=>offers.createOffer(r.staff,r.body),true);
+ route('PATCH','/offers/:id',S.OfferInput,S.Offer,async(r:any)=>offers.updateOffer(r.staff,r.params.id,r.body),true,{schema:{params:S.Params}});
  route('GET','/portal/shop',undefined,T.Object({enabled:T.Boolean(),flow:T.String(),networks:T.Array(T.Object({value:T.String(),label:T.String()},{additionalProperties:false})),items:T.Array(T.Any())},{additionalProperties:false}),async()=>{
   const provider=paymentProvider();
   return {enabled:!!provider,flow:provider?.flow||'redirect',networks:provider?.networks||[],...(provider?await purchases.catalogue():{items:[]})};

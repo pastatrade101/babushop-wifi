@@ -3,9 +3,24 @@ import {tx, audit} from './index.ts';
 import {decrypt, digest, normalize} from './crypto.ts';
 import {mac} from './access.ts';
 import type {RadiusConfig, VoucherRequest, VoucherDecision} from '../../network/src/radius.ts';
+import {isOfferUsername, offerChapValid} from '../../network/src/offer.ts';
+import {authorizeOffer} from './offers.ts';
 
 export async function authorizeRadius(request: VoucherRequest, config: RadiusConfig): Promise<VoucherDecision | null> {
   if (process.env.NETWORK_PROVIDER !== 'mikrotik' || process.env.OMADA_MODE !== 'live' || process.env.MIKROTIK_RADIUS_ENABLED !== 'true') return null;
+  // A free offer sign-in: anyone on the Wi-Fi while an offer runs. Decided before
+  // the voucher lookup and never touching voucher rows; the session ends when
+  // the offer's window closes.
+  if (isOfferUsername(request.username)) {
+    let device: string;
+    try { device = mac(request.clientMac); } catch { return null; }
+    if (!offerChapValid(request.username, request.chapPassword, request.challenge)) return null;
+    return tx(async db => {
+      await db.query("set local statement_timeout='2000ms'");
+      const now: Date = (await db.query('select clock_timestamp() as now')).rows[0].now;
+      return authorizeOffer(db, device, now);
+    });
+  }
   let code: string, clientMac: string;
   try { code = normalize(request.username); clientMac = mac(request.clientMac); } catch { return null; }
   return tx(async db => {

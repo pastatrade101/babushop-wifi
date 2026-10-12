@@ -12,7 +12,7 @@ let {data,children}=$props();let menuOpen=$state(false);
 type Link=[string,string,string];
 const groups:{id:string;label:string;links:Link[]}[]=[
  {id:'home',label:'',links:[['/','Overview','overview']]},
- {id:'selling',label:'Selling',links:[['/sell','Sell internet','plus'],['/vouchers','Vouchers','ticket'],['/voucher-batches','Voucher batches','batch'],['/packages','Packages','package']]},
+ {id:'selling',label:'Selling',links:[['/sell','Sell internet','plus'],['/vouchers','Vouchers','ticket'],['/voucher-batches','Voucher batches','batch'],['/packages','Packages','package'],['/offers','Free offer','gift']]},
  {id:'money',label:'Money',links:[['/sales','Sales','sales'],['/payments','Mobile payments','payment'],['/revenue','Revenue','money'],['/reports','Reports','reports']]},
  {id:'access',label:'Wi-Fi access',links:[['/access-grants','Access grants','grants'],['/sessions','Wi-Fi sessions','wifi']]},
  {id:'network',label:'Network',links:[['/network','Network','network'],['/router','Router','router'],['/settings','Network setup','settings']]},
