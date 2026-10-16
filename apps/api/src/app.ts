@@ -53,7 +53,15 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
  route('PATCH','/packages/:id',S.PackageInput,S.Row,async(r:any)=>tx(async db=>{const b=r.body;let speeds;try{speeds=validateSpeeds(b);}catch(e){throw new Problem(400,(e as Error).message);}const p=(await db.query('update wifi.packages set name=$2,description=$3,price_tzs=$4,duration_minutes=$5,active=$6,download_mbps=$8,upload_mbps=$9,updated_at=now() where id=$1 and site_id=$7 returning *',[r.params.id,b.name,b.description||'',b.price_tzs,b.duration_minutes,b.active??true,SITE,speeds.download_mbps,speeds.upload_mbps])).rows[0];requireValue(p,404,'Package not found');await audit(db,r.staff.id,'PACKAGE_UPDATED',p.id);return p;}),true,{schema:{params:S.Params}});
  route('POST','/packages/bulk',S.BulkPackageInput,T.Object({created:T.Integer(),items:T.Array(S.Row)},{additionalProperties:false}),async(r:any)=>catalogue.bulkCreate(r.staff,r.body.items),true,{config:{rateLimit:{max:10,timeWindow:'1 minute'}}});
  route('POST','/voucher-batches',S.BatchInput,S.Row,async(r:any)=>sales.generateBatch(r.staff,r.body),true);
- route('GET','/voucher-batches',undefined,S.List,async(r:any)=>paged('select * from wifi.voucher_batches where label ilike $1',['%'+(r.query.q||'')+'%'],r.query),true,{schema:{querystring:S.Paging}});
+ // Batches with unused vouchers by default; state=finished for the used-up ones, state=all for every batch.
+ // Each row carries its package's current name and how many of its vouchers are still unused.
+ route('GET','/voucher-batches',undefined,S.List,async(r:any)=>paged(`select b.*,p.name package_name,
+   (select count(*) from wifi.vouchers v where v.batch_id=b.id and v.inventory_state='AVAILABLE')::int available
+  from wifi.voucher_batches b left join wifi.packages p on p.id=b.package_id
+  where (b.label ilike $1 or p.name ilike $1)
+   and ($2='all' or (case when $2='finished' then not exists(select 1 from wifi.vouchers v where v.batch_id=b.id and v.inventory_state='AVAILABLE')
+                         else exists(select 1 from wifi.vouchers v where v.batch_id=b.id and v.inventory_state='AVAILABLE') end))`,
+  ['%'+(r.query.q||'')+'%',r.query.state||''],r.query),true,{schema:{querystring:S.Paging}});
  route('GET','/voucher-batches/:id',undefined,S.Row,async(r:any)=>{const b=(await pool.query('select * from wifi.voucher_batches where id=$1',[r.params.id])).rows[0];requireValue(b,404,'Batch not found');return b;},true,{schema:{params:S.Params}});
  route('GET','/vouchers',undefined,S.List,async(r:any)=>paged(`select v.id,v.site_id,v.batch_id,v.package_id,v.code_mask,v.package_name,v.price_tzs,v.duration_minutes,v.download_mbps,v.upload_mbps,v.inventory_state,v.created_at,g.state from wifi.vouchers v left join wifi.access_grants g on g.voucher_id=v.id where (v.code_mask ilike $1 or v.package_name ilike $1) and ($2='' or v.inventory_state=$2 or g.state=$2) and ($3::uuid is null or v.package_id=$3::uuid)`,['%'+(r.query.q||'')+'%',r.query.state||'',r.query.package_id||null],r.query),false,{schema:{querystring:S.Paging}});
  route('POST','/vouchers/:id/reveal',T.Object({},{additionalProperties:false}),S.SecretRows,async(r:any)=>({items:await sales.reveal(r.staff,{voucher_id:r.params.id})}),true,{schema:{params:S.Params},config:{rateLimit:{max:30,timeWindow:'1 minute'}}});
