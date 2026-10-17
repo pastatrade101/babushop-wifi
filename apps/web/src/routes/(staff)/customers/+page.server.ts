@@ -8,7 +8,7 @@ export const load=async(event:any)=>{
  if(parent.staff.role!=='ADMIN')error(403,'Administrator access required');
  const q=(event.url.searchParams.get('q')||'').slice(0,100);
  const raw=event.url.searchParams.get('filter');
- const filter=raw==='bought'||raw==='tried'?raw:'all';
+ const filter=raw==='bought'||raw==='tried'||raw==='online'?raw:'all';
  const params=new URLSearchParams({filter});if(q)params.set('q',q);
  return {...await api(event,'/customers?'+params),q,filter};
 };

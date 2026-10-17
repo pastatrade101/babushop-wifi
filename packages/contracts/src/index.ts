@@ -31,11 +31,11 @@ export const VipUpdate=T.Object({name:Text(60),note:NullableText(200),enabled:T.
 export const Vip=T.Object({id:Id,mac:T.String(),name:T.String(),note:T.Union([T.String(),T.Null()]),enabled:T.Boolean(),on_router:T.Boolean(),router_binding_id:T.Union([T.String(),T.Null()]),synced_at:T.Union([T.String(),T.Null()]),sync_error:T.Union([T.String(),T.Null()]),created_at:T.String(),updated_at:T.String()},{additionalProperties:false});
 export const Vips=T.Object({items:T.Array(Vip)},{additionalProperties:false});
 export const VipCandidates=T.Object({items:T.Array(T.Object({mac:T.String(),address:T.String(),host_name:T.Union([T.String(),T.Null()]),signed_in_as:T.Union([T.String(),T.Null()]),bypassed:T.Boolean(),vip:T.Boolean(),idle:T.String()},{additionalProperties:false}))},{additionalProperties:false});
-export const CustomersQuery=T.Object({q:T.Optional(T.String({maxLength:100})),filter:T.Optional(T.Union([T.Literal('all'),T.Literal('bought'),T.Literal('tried')]))},{additionalProperties:false});
+export const CustomersQuery=T.Object({q:T.Optional(T.String({maxLength:100})),filter:T.Optional(T.Union([T.Literal('all'),T.Literal('bought'),T.Literal('tried'),T.Literal('online')]))},{additionalProperties:false});
 const NullStr=T.Union([T.String(),T.Null()]);
 export const Customers=T.Object({
- counts:T.Object({all:T.Integer(),bought:T.Integer(),tried:T.Integer()},{additionalProperties:false}),
- items:T.Array(T.Object({phone:T.String(),name:NullStr,note:NullStr,sms_opt_out:T.Boolean(),purchases:T.Integer(),spent_tzs:T.Number(),attempts:T.Integer(),last_at:NullStr,first_at:NullStr,network:NullStr,added_at:NullStr},{additionalProperties:false})),
+ counts:T.Object({all:T.Integer(),bought:T.Integer(),tried:T.Integer(),online:T.Integer()},{additionalProperties:false}),
+ items:T.Array(T.Object({phone:T.String(),online:T.Boolean(),name:NullStr,note:NullStr,sms_opt_out:T.Boolean(),purchases:T.Integer(),spent_tzs:T.Number(),attempts:T.Integer(),last_at:NullStr,first_at:NullStr,network:NullStr,added_at:NullStr},{additionalProperties:false})),
  sms:T.Object({enabled:T.Boolean(),balance:T.Union([T.Number(),T.Null()])},{additionalProperties:false}),
  campaigns:T.Array(T.Object({id:Id,text:T.String(),recipients:T.Integer(),sent:T.Integer(),failed:T.Integer(),sent_by:NullStr,created_at:T.String()},{additionalProperties:false})),
 },{additionalProperties:false});

@@ -5,7 +5,7 @@ import Icon from '$lib/components/Icon.svelte';
 import {openModal,closeModal} from '$lib/modal';
 let {data,form}=$props();
 
-type User={phone:string;name:string|null;note:string|null;sms_opt_out:boolean;purchases:number;spent_tzs:number;attempts:number;last_at:string|null;first_at:string|null;network:string|null;added_at:string|null};
+type User={phone:string;online:boolean;name:string|null;note:string|null;sms_opt_out:boolean;purchases:number;spent_tzs:number;attempts:number;last_at:string|null;first_at:string|null;network:string|null;added_at:string|null};
 const users=$derived((data.items??[]) as User[]);
 const pretty=(p:string)=>'0'+p.slice(3,6)+' '+p.slice(6,9)+' '+p.slice(9);
 const money=(n:number)=>'TZS '+new Intl.NumberFormat('en-TZ').format(Math.round(n||0));
@@ -70,8 +70,8 @@ const submitSms=()=>{sending=true;smsProblem=null;return async({result,update}:{
    <button class="button secondary">Search</button>
   </form>
   <nav class="tabs" aria-label="Which users">
-   {#each [['all','Everyone'],['bought','Bought'],['tried','Tried']] as [key,label] (key)}
-    <a href={'?'+new URLSearchParams({filter:key,...(data.q?{q:data.q}:{})})} class:on={data.filter===key} aria-current={data.filter===key?'page':undefined} data-sveltekit-noscroll>{label}<span class="count">{data.counts?.[key]??0}</span></a>
+   {#each [['all','Everyone'],['online','Connected'],['bought','Bought'],['tried','Tried']] as [key,label] (key)}
+    <a href={'?'+new URLSearchParams({filter:key,...(data.q?{q:data.q}:{})})} class:on={data.filter===key} aria-current={data.filter===key?'page':undefined} data-sveltekit-noscroll>{#if key==='online'}<span class="live-dot" aria-hidden="true"></span>{/if}{label}<span class="count">{data.counts?.[key]??0}</span></a>
    {/each}
   </nav>
  </div>
@@ -82,6 +82,7 @@ const submitSms=()=>{sending=true;smsProblem=null;return async({result,update}:{
   <div class="empty">
    {#if data.q}<p>No one matches “{data.q}”.</p><a class="button secondary" href={'?'+new URLSearchParams({filter:data.filter})}>Clear search</a>
    {:else if data.filter==='tried'}<p>Everyone who started a payment also finished one. Nobody to follow up here.</p>
+   {:else if data.filter==='online'}<p>No buyer is online right now. People on a free offer, VIP devices and cash vouchers without a number are not listed here.</p>
    {:else}<p>No users yet. Everyone who pays by phone appears here by themselves; add others with <strong>Add user</strong>.</p>{/if}
   </div>
  {:else}
@@ -91,7 +92,7 @@ const submitSms=()=>{sending=true;smsProblem=null;return async({result,update}:{
     <li class:ticked={chosen.has(u.phone)}>
      <input type="checkbox" class="tick" checked={chosen.has(u.phone)} onchange={()=>toggle(u.phone)} aria-label={'Tick '+(u.name??pretty(u.phone))}>
      <div class="who">
-      <div class="who-line"><strong>{u.name??'No name yet'}</strong>{#if u.purchases}<span class="pill bought">Bought {u.purchases}×</span>{:else if u.attempts}<span class="pill tried">Tried {u.attempts}×</span>{/if}{#if u.sms_opt_out}<span class="pill off">No SMS</span>{/if}</div>
+      <div class="who-line"><strong>{u.name??'No name yet'}</strong>{#if u.online}<span class="pill online"><span class="live-dot" aria-hidden="true"></span>Online now</span>{/if}{#if u.purchases}<span class="pill bought">Bought {u.purchases}×</span>{:else if u.attempts}<span class="pill tried">Tried {u.attempts}×</span>{/if}{#if u.sms_opt_out}<span class="pill off">No SMS</span>{/if}</div>
       <p class="small"><a href={'tel:+'+u.phone}>{pretty(u.phone)}</a>{#if u.network}{' · '}{NETWORKS[u.network]??u.network}{/if}{#if u.purchases}{' · '}{money(u.spent_tzs)}{/if}{' · last '}{when(u.last_at??u.added_at)}</p>
       {#if u.note}<p class="small note">{u.note}</p>{/if}
      </div>
@@ -158,6 +159,8 @@ const submitSms=()=>{sending=true;smsProblem=null;return async({result,update}:{
  .tabs a.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(15,23,42,.12)}
  .count{display:inline-grid;place-items:center;min-width:22px;height:20px;padding:0 6px;border-radius:999px;background:var(--surface);color:var(--muted);font-size:.72rem;font-weight:700;font-variant-numeric:tabular-nums;box-sizing:border-box}
  .tabs a.on .count{background:var(--primary-soft);color:var(--primary-text)}
+ .live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--success);box-shadow:0 0 0 3px color-mix(in srgb,var(--success) 22%,transparent);flex-shrink:0}
+ .pill.online{gap:6px;align-items:center;background:var(--success-soft);color:var(--success)}
  .searching{margin:-2px 0 8px;font-size:.86rem;color:var(--ink)}
  .searching a{color:var(--primary-text);font-weight:600}
  .sms-line{margin:0 0 8px}
@@ -196,5 +199,5 @@ const submitSms=()=>{sending=true;smsProblem=null;return async({result,update}:{
  .hint{margin:-4px 0 0;font-size:.78rem;color:var(--muted)}
  .pop-actions{display:flex;justify-content:flex-end;gap:10px}.pop-actions .button{margin:0;height:42px}
  .pop .notice{margin:0}
- @media (max-width:640px){.heading-actions{width:100%}.heading-actions .button{flex:1}.filters{grid-template-columns:1fr}.tabs{display:grid;grid-template-columns:repeat(3,1fr);width:100%}.tabs a{justify-content:center;padding:0 6px}.users li{flex-wrap:wrap;align-items:flex-start}.users li .tick{margin-top:3px}.who{flex:1 1 calc(100% - 40px)}.users li .act{margin-left:30px}.pop-actions .button{flex:1}}
+ @media (max-width:640px){.heading-actions{width:100%}.heading-actions .button{flex:1}.filters{grid-template-columns:1fr}.tabs{display:grid;grid-template-columns:repeat(2,1fr);height:auto;width:100%}.tabs a{height:36px}.tabs a{justify-content:center;padding:0 6px}.users li{flex-wrap:wrap;align-items:flex-start}.users li .tick{margin-top:3px}.who{flex:1 1 calc(100% - 40px)}.users li .act{margin-left:30px}.pop-actions .button{flex:1}}
 </style>
