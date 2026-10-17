@@ -18,6 +18,7 @@ import {MONEY_ROLES,seesAllSales} from './access.ts';
 import * as catalogue from '../../../packages/database/src/catalogue.ts';
 import {revenueSummary,partnerCollections} from '../../../packages/database/src/revenue.ts';
 import {paymentProvider} from '../../../packages/payments/src/index.ts';
+import {mobileLogin,mobileRefresh} from './mobile-auth.ts';
 import {digest,csvCell} from '../../../packages/database/src/crypto.ts';
 import {type Adapter,adapterFromEnv} from '../../../packages/omada/src/index.ts';
 import * as S from '../../../packages/contracts/src/index.ts';
@@ -47,7 +48,7 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
  await app.register(swagger,{openapi:{info:{title:'JIACHIE WIFI API',version:'1.0.0'},components:{securitySchemes:{staffToken:{type:'http',scheme:'bearer'}}}}});
  app.setErrorHandler((error,_req,reply)=>{const e=error as any;const status=e instanceof Problem?e.status:e.validation?400:e.statusCode===429?429:500;reply.code(status).send({error:status===500?'Unable to complete the request. Please try again.':e.validation?'Check the submitted fields.':status===429?'Too many attempts. Please wait and try again.':e.message});});
  app.addHook('onRequest',async(req,reply)=>{reply.header('Cache-Control','no-store');if(['POST','PATCH','DELETE','PUT'].includes(req.method)&&req.headers.origin&&req.headers.origin!==process.env.APP_ORIGIN)throw new Problem(403,'Origin not allowed');
- const path=req.url.split('?')[0];if(path.startsWith('/health/')||path.startsWith('/api/v1/portal/'))return;
+ const path=req.url.split('?')[0];if(path.startsWith('/health/')||path.startsWith('/api/v1/portal/')||path.startsWith('/api/v1/mobile/auth/'))return;
  const token=req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];requireValue(token,401,'Staff login required');let id:string|null=null;try{id=await verifyCached(token);}catch{throw new Problem(503,'Authentication unavailable');}requireValue(id,401,'Staff login required');const staff=(await pool.query('select id,display_name,role,enabled from wifi.staff_profiles where id=$1',[id])).rows[0];requireValue(staff?.enabled,403,'Staff access is disabled or unavailable');req.staff=staff;
  if(path.startsWith('/docs')||path==='/api/v1/openapi.json')requireValue(staff.role==='ADMIN',403,'Administrator permission required');
  });
@@ -105,6 +106,9 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
  const inventory=async()=> (await pool.query("select count(*) filter(where inventory_state='AVAILABLE')::int stock,count(*) filter(where inventory_state='SOLD' and g.id is null)::int sold_unused,count(*) filter(where g.state='ACTIVE' and g.proposed_expires_at>now())::int active,count(*) filter(where g.state='NEEDS_REVIEW')::int needs_review from wifi.vouchers v left join wifi.access_grants g on g.voucher_id=v.id")).rows[0];
  route('GET','/dashboard',undefined,S.Row,async(r:any)=>r.staff.role==='ADMIN'?{...await totals(),...await inventory()}:await inventory());
  route('GET','/reports/sales',undefined,S.Row,async(r:any)=>totals(r.query.from,r.query.to),true,{schema:{querystring:S.Paging}});
+ // The phone app's sign-in: email and password once, then the refresh token renews the session.
+ route('POST','/mobile/auth/login',S.MobileLogin,S.MobileSession,async(r:any)=>mobileLogin(r.body.email,r.body.password),false,{config:{rateLimit:{max:10,timeWindow:'1 minute'}}});
+ route('POST','/mobile/auth/refresh',S.MobileRefresh,S.MobileSession,async(r:any)=>mobileRefresh(r.body.refresh_token),false,{config:{rateLimit:{max:30,timeWindow:'1 minute'}}});
  // Wi-Fi users: phone numbers from sales, with the shop's own names and notes, and custom SMS. Administrators only.
  route('GET','/customers',undefined,S.Customers,async(r:any)=>customers.listCustomers({q:r.query.q,filter:r.query.filter}),true,{schema:{querystring:S.CustomersQuery}});
  route('PUT','/customers',S.CustomerInput,S.Customer,async(r:any)=>customers.saveCustomer(r.staff,r.body),true);
