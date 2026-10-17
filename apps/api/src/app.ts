@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import Fastify from 'fastify';
 import {networkPlan,validateSpeeds,checkMikroTik} from '../../../packages/network/src/index.ts';
 import helmet from '@fastify/helmet';
@@ -24,6 +25,17 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
  const adapter=options.adapter||adapterFromEnv();const app=Fastify({logger:options.logger?{level:'info',redact:['req.headers.authorization','req.headers.cookie','res.headers.set-cookie'],serializers:{req:r=>({method:r.method,url:r.url.split('?')[0],id:r.id}),err:()=>({type:'Error',message:'Request failed',stack:''})}}:false,bodyLimit:16384,trustProxy:process.env.TRUST_PROXY||false,ajv:{customOptions:{removeAdditional:false}}});
  const supabase=options.verifyToken?null:createClient(process.env.SUPABASE_URL!,process.env.SUPABASE_PUBLISHABLE_KEY!,{auth:{persistSession:false,autoRefreshToken:false}});
  const verify=options.verifyToken||(async(token:string)=>{const {data,error}=await supabase!.auth.getUser(token);return error?null:data.user?.id||null;});
+ // A token Supabase has just confirmed is remembered for 30 seconds, so the several API calls
+ // behind one page do not each make the same round trip. Only confirmations are kept, and the
+ // staff row (role, enabled) is still read on every request, so disabling someone is immediate.
+ const confirmed=new Map<string,{id:string;until:number}>();
+ const verifyCached=async(token:string)=>{
+  const key=createHash('sha256').update(token).digest('hex'),now=Date.now(),hit=confirmed.get(key);
+  if(hit&&hit.until>now)return hit.id;
+  const id=await verify(token);
+  if(id){if(confirmed.size>500)confirmed.clear();confirmed.set(key,{id,until:now+30_000});}
+  return id;
+ };
  app.decorateRequest('staff',null);
  // Keep the raw JSON alongside the parsed body: the payment webhook's HMAC is
  // computed over the exact bytes sent, which re-serializing would not reproduce.
@@ -34,7 +46,7 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
  app.setErrorHandler((error,_req,reply)=>{const e=error as any;const status=e instanceof Problem?e.status:e.validation?400:e.statusCode===429?429:500;reply.code(status).send({error:status===500?'Unable to complete the request. Please try again.':e.validation?'Check the submitted fields.':status===429?'Too many attempts. Please wait and try again.':e.message});});
  app.addHook('onRequest',async(req,reply)=>{reply.header('Cache-Control','no-store');if(['POST','PATCH','DELETE','PUT'].includes(req.method)&&req.headers.origin&&req.headers.origin!==process.env.APP_ORIGIN)throw new Problem(403,'Origin not allowed');
  const path=req.url.split('?')[0];if(path.startsWith('/health/')||path.startsWith('/api/v1/portal/'))return;
- const token=req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];requireValue(token,401,'Staff login required');let id:string|null=null;try{id=await verify(token);}catch{throw new Problem(503,'Authentication unavailable');}requireValue(id,401,'Staff login required');const staff=(await pool.query('select id,display_name,role,enabled from wifi.staff_profiles where id=$1',[id])).rows[0];requireValue(staff?.enabled,403,'Staff access is disabled or unavailable');req.staff=staff;
+ const token=req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];requireValue(token,401,'Staff login required');let id:string|null=null;try{id=await verifyCached(token);}catch{throw new Problem(503,'Authentication unavailable');}requireValue(id,401,'Staff login required');const staff=(await pool.query('select id,display_name,role,enabled from wifi.staff_profiles where id=$1',[id])).rows[0];requireValue(staff?.enabled,403,'Staff access is disabled or unavailable');req.staff=staff;
  if(path.startsWith('/docs')||path==='/api/v1/openapi.json')requireValue(staff.role==='ADMIN',403,'Administrator permission required');
  });
  app.get('/docs',async(_req,reply)=>reply.type('text/html').send('<!doctype html><html lang="en"><meta charset="utf-8"><title>JIACHIE WIFI API</title><h1>JIACHIE WIFI API</h1><p>Administrator bearer authentication is required. Download the OpenAPI schema at <a href="/api/v1/openapi.json">/api/v1/openapi.json</a> and import it into your API client.</p></html>')); 

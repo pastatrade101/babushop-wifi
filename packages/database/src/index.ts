@@ -1,6 +1,9 @@
 import pg from 'pg';
 import {connection} from './connection.ts';
-export const pool = new pg.Pool({...connection(process.env.DATABASE_URL),max:10,connectionTimeoutMillis:5000,statement_timeout:10000,application_name:'babu-shop-wifi'});
+// Idle connections are kept for five minutes (pg's default is ten seconds). Opening one to the
+// Supabase pooler costs ~200 ms of TLS and auth; a warm one answers in ~25 ms. With one person
+// clicking through the portal, a ten-second timeout meant nearly every click paid to reconnect.
+export const pool = new pg.Pool({...connection(process.env.DATABASE_URL),max:10,idleTimeoutMillis:300_000,keepAlive:true,connectionTimeoutMillis:5000,statement_timeout:10000,application_name:'babu-shop-wifi'});
 pool.on('error',()=>console.error('Database connection interrupted; subsequent requests will reconnect.'));
 export type DB = Pick<pg.PoolClient,'query'>;
 export async function tx<T>(fn:(db:DB)=>Promise<T>):Promise<T>{const c=await pool.connect();try{await c.query('begin');const result=await fn(c);await c.query('commit');return result;}catch(e){await c.query('rollback');throw e;}finally{c.release();}}

@@ -1,5 +1,5 @@
 <script lang="ts">
-import {page} from '$app/state';
+import {page,navigating} from '$app/state';
 import {afterNavigate} from '$app/navigation';
 import {untrack} from 'svelte';
 import Icon from '$lib/components/Icon.svelte';
@@ -19,7 +19,9 @@ const groups:{id:string;label:string;links:Link[]}[]=[
  {id:'admin',label:'Administration',links:[['/staff','Staff','staff']]},
 ];
 // A detail page such as /network/<id> should keep its section lit in the sidebar.
-const isCurrent=(url:string)=>page.url.pathname===url||(url!=='/'&&page.url.pathname.startsWith(url+'/'));
+// While a page is loading, the item that was tapped is lit straight away, so the menu answers at once.
+const shownPath=$derived(navigating.to?.url.pathname??page.url.pathname);
+const isCurrent=(url:string)=>shownPath===url||(url!=='/'&&shownPath.startsWith(url+'/'));
 const visible=$derived(groups.map(g=>({...g,links:g.links.filter(([url])=>canOpen(data.staff.role,url))})).filter(g=>g.links.length));
 const current=$derived(groups.flatMap(g=>g.links).find(([url])=>isCurrent(url))?.[1]||'Workspace');
 const groupOf=()=>groups.find(g=>g.links.some(([url])=>isCurrent(url)))?.id;
@@ -90,6 +92,7 @@ $effect(()=>{
  return()=>observer.disconnect();
 });
 </script>
+{#if navigating.to}<div class="nav-progress" aria-hidden="true"></div>{/if}
 <a class="skip-link" href="#main-content">Skip to content</a>
 <div class="workspace" class:nav-collapsed={collapsed}>
  <aside class="sidebar">

@@ -360,4 +360,9 @@ html{scroll-padding-top:100px}
 /* <dialog> on a browser that predates it: hidden until opened, then laid over the page (see $lib/modal). */
 :is(.dialog,.mobile-checkout-sheet):not([open]){display:none}
 :is(.dialog,.mobile-checkout-sheet)[data-fallback][open]{position:fixed;inset:0;margin:auto;height:fit-content;max-height:calc(100vh - 24px);overflow-y:auto;z-index:50;box-shadow:0 0 0 100vmax #031e46a6,0 24px 70px #00183660}
+/* A thin bar across the top while a portal page loads, shown only if it takes over a tenth of a second. */
+.nav-progress{position:fixed;inset:0 0 auto;height:3px;z-index:2000;pointer-events:none;overflow:hidden}
+.nav-progress::before{content:"";position:absolute;inset:0;background:var(--primary);transform-origin:left;transform:scaleX(0);opacity:0;animation:nav-progress 6s cubic-bezier(.08,.7,.2,1) .1s forwards}
+@keyframes nav-progress{0%{transform:scaleX(0);opacity:1}100%{transform:scaleX(.92);opacity:1}}
+@media (prefers-reduced-motion:reduce){.nav-progress::before{animation:none;transform:scaleX(.6);opacity:1}}
 
