@@ -366,3 +366,5 @@ html{scroll-padding-top:100px}
 @keyframes nav-progress{0%{transform:scaleX(0);opacity:1}100%{transform:scaleX(.92);opacity:1}}
 @media (prefers-reduced-motion:reduce){.nav-progress::before{animation:none;transform:scaleX(.6);opacity:1}}
 
+/* A saved change that still needs the router: amber, between a confirmation and an error. */
+.notice.warning{background:var(--warning-soft);color:var(--warning);border-color:var(--warning)}

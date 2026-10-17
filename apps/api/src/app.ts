@@ -7,6 +7,7 @@ import swagger from '@fastify/swagger';
 import {Type as T} from '@sinclair/typebox';
 import {createClient} from '@supabase/supabase-js';
 import * as offers from '../../../packages/database/src/offers.ts';
+import * as vip from '../../../packages/database/src/vip.ts';
 import {pool,tx,audit,Problem,requireValue,SITE,type Staff} from '../../../packages/database/src/index.ts';
 import * as sales from '../../../packages/database/src/sales.ts';
 import * as access from '../../../packages/database/src/access.ts';
@@ -103,6 +104,13 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
  const inventory=async()=> (await pool.query("select count(*) filter(where inventory_state='AVAILABLE')::int stock,count(*) filter(where inventory_state='SOLD' and g.id is null)::int sold_unused,count(*) filter(where g.state='ACTIVE' and g.proposed_expires_at>now())::int active,count(*) filter(where g.state='NEEDS_REVIEW')::int needs_review from wifi.vouchers v left join wifi.access_grants g on g.voucher_id=v.id")).rows[0];
  route('GET','/dashboard',undefined,S.Row,async(r:any)=>r.staff.role==='ADMIN'?{...await totals(),...await inventory()}:await inventory());
  route('GET','/reports/sales',undefined,S.Row,async(r:any)=>totals(r.query.from,r.query.to),true,{schema:{querystring:S.Paging}});
+ // VIP devices: free access by Wi-Fi address, mirrored as tagged bypass bindings on the router. Administrators only.
+ route('GET','/vip-devices',undefined,S.Vips,async()=>vip.listVip(),true);
+ route('GET','/vip-devices/candidates',undefined,S.VipCandidates,async()=>vip.vipCandidates(),true);
+ route('POST','/vip-devices',S.VipInput,S.Vip,async(r:any)=>vip.addVip(r.staff,r.body),true,{config:{rateLimit:{max:30,timeWindow:'1 minute'}}});
+ route('POST','/vip-devices/sync',undefined,S.OK,async(r:any)=>vip.syncVip(r.staff),true,{config:{rateLimit:{max:6,timeWindow:'1 minute'}}});
+ route('PATCH','/vip-devices/:id',S.VipUpdate,S.Vip,async(r:any)=>vip.updateVip(r.staff,r.params.id,r.body),true,{schema:{params:S.Params}});
+ route('DELETE','/vip-devices/:id',undefined,S.OK,async(r:any)=>vip.removeVip(r.staff,r.params.id),true,{schema:{params:S.Params}});
  route('GET','/reports/collections',undefined,S.PartnerCollections,async()=>partnerCollections(),MONEY_ROLES);
  route('GET','/reports/revenue',undefined,S.RevenueSummary,async(r:any)=>revenueSummary(r.query.from,r.query.to),MONEY_ROLES,{schema:{querystring:S.RevenueQuery}});
  route('GET','/reports/inventory',undefined,S.Row,inventory,true);

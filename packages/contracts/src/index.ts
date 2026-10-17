@@ -25,6 +25,12 @@ export const Params=T.Object({id:Id},{additionalProperties:false});
 // Reporting time series. Row's field allowlist is for record shapes, so the
 // chart endpoints carry their own explicit schemas.
 export const TrendQuery=T.Object({days:T.Optional(T.Integer({minimum:7,maximum:180}))},{additionalProperties:false});
+const NullableText=(max:number)=>T.Optional(T.Union([T.String({maxLength:max}),T.Null()]));
+export const VipInput=T.Object({mac:T.String({minLength:12,maxLength:30}),name:Text(60),note:NullableText(200)},{additionalProperties:false});
+export const VipUpdate=T.Object({name:Text(60),note:NullableText(200),enabled:T.Boolean()},{additionalProperties:false});
+export const Vip=T.Object({id:Id,mac:T.String(),name:T.String(),note:T.Union([T.String(),T.Null()]),enabled:T.Boolean(),on_router:T.Boolean(),router_binding_id:T.Union([T.String(),T.Null()]),synced_at:T.Union([T.String(),T.Null()]),sync_error:T.Union([T.String(),T.Null()]),created_at:T.String(),updated_at:T.String()},{additionalProperties:false});
+export const Vips=T.Object({items:T.Array(Vip)},{additionalProperties:false});
+export const VipCandidates=T.Object({items:T.Array(T.Object({mac:T.String(),address:T.String(),host_name:T.Union([T.String(),T.Null()]),signed_in_as:T.Union([T.String(),T.Null()]),bypassed:T.Boolean(),vip:T.Boolean(),idle:T.String()},{additionalProperties:false}))},{additionalProperties:false});
 export const PartnerCollections=T.Object({source:T.String(),payments:T.Integer(),total_tzs:T.Number(),this_month_tzs:T.Number(),refund_due:T.Integer(),refund_due_tzs:T.Number(),first_paid_at:T.Union([T.String(),T.Null()]),last_paid_at:T.Union([T.String(),T.Null()]),networks:T.Array(T.Object({network:T.String(),payments:T.Integer(),total_tzs:T.Number()},{additionalProperties:false}))},{additionalProperties:false});
 export const RevenueQuery=T.Object({from:T.Optional(T.String({format:'date'})),to:T.Optional(T.String({format:'date'}))},{additionalProperties:false});
 export const RevenueSummary=T.Object({
