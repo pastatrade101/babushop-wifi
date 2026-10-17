@@ -14,11 +14,13 @@ export const load=async(event:any)=>{
   try{return {items:(await api(event,path)).items,error:false};}
   catch(e){if((e as {status?:number}).status===303)throw e;return {items:[],error:true};}
  };
- const [summary,trend,byPackage]=await Promise.all([
+ const [summary,trend,byPackage,collections]=await Promise.all([
   api(event,'/reports/revenue?'+query),
   optional('/reports/trend?days=30'),
-  optional('/reports/by-package?days=30')
+  optional('/reports/by-package?days=30'),
+  // All-time money the payment partner collected for this shop, for claiming it.
+  api(event,'/reports/collections').catch(e=>{if((e as {status?:number}).status===303)throw e;return null;})
  ]);
- return {summary,trend:trend.items,byPackage:byPackage.items,trendError:trend.error,packageError:byPackage.error,
+ return {summary,collections,trend:trend.items,byPackage:byPackage.items,trendError:trend.error,packageError:byPackage.error,
   presets:[{label:'Today',from:today,to:today},{label:'7 days',from:start(7),to:today},{label:'30 days',from:start(30),to:today}]};
 };

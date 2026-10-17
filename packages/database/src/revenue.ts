@@ -43,3 +43,21 @@ export async function revenueSummary(from?:string,to?:string){
   other_gross_tzs:channels.other.gross_tzs,other_reversals_tzs:channels.other.reversals_tzs,other_net_tzs:channels.other.gross_tzs-channels.other.reversals_tzs,
  };
 }
+
+/**
+ * Everything the settling partner has collected for this shop, all time: every AzamPay
+ * payment that succeeded. All of them go out under the shop's source tag (AZAM_SOURCE,
+ * "pastory"), so this is the amount to claim from the partner. A paid purchase that had
+ * to be refunded (REFUND_DUE) was still collected, so it counts, and is shown apart.
+ */
+export async function partnerCollections(){
+ const row=(await pool.query(`select count(*)::int payments,coalesce(sum(amount_tzs),0)::float8 total_tzs,min(paid_at) first_paid_at,max(paid_at) last_paid_at,
+   coalesce(sum(amount_tzs) filter (where paid_at>=(date_trunc('month',now() at time zone 'Africa/Dar_es_Salaam') at time zone 'Africa/Dar_es_Salaam')),0)::float8 this_month_tzs,
+   count(*) filter (where status='REFUND_DUE')::int refund_due,coalesce(sum(amount_tzs) filter (where status='REFUND_DUE'),0)::float8 refund_due_tzs
+  from wifi.payment_intents where site_id=$1 and provider='azam' and status in ('PAID','REFUND_DUE') and paid_at is not null`,[SITE])).rows[0];
+ const networks=(await pool.query(`select coalesce(network,'other') network,count(*)::int payments,coalesce(sum(amount_tzs),0)::float8 total_tzs
+  from wifi.payment_intents where site_id=$1 and provider='azam' and status in ('PAID','REFUND_DUE') and paid_at is not null group by 1 order by 3 desc`,[SITE])).rows;
+ const iso=(d:Date|null)=>d?new Date(d).toISOString():null;
+ return {source:(process.env.AZAM_SOURCE||'pastory').trim().toLowerCase(),payments:row.payments,total_tzs:row.total_tzs,this_month_tzs:row.this_month_tzs,
+  refund_due:row.refund_due,refund_due_tzs:row.refund_due_tzs,first_paid_at:iso(row.first_paid_at),last_paid_at:iso(row.last_paid_at),networks};
+}

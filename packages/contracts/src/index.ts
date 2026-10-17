@@ -25,6 +25,7 @@ export const Params=T.Object({id:Id},{additionalProperties:false});
 // Reporting time series. Row's field allowlist is for record shapes, so the
 // chart endpoints carry their own explicit schemas.
 export const TrendQuery=T.Object({days:T.Optional(T.Integer({minimum:7,maximum:180}))},{additionalProperties:false});
+export const PartnerCollections=T.Object({source:T.String(),payments:T.Integer(),total_tzs:T.Number(),this_month_tzs:T.Number(),refund_due:T.Integer(),refund_due_tzs:T.Number(),first_paid_at:T.Union([T.String(),T.Null()]),last_paid_at:T.Union([T.String(),T.Null()]),networks:T.Array(T.Object({network:T.String(),payments:T.Integer(),total_tzs:T.Number()},{additionalProperties:false}))},{additionalProperties:false});
 export const RevenueQuery=T.Object({from:T.Optional(T.String({format:'date'})),to:T.Optional(T.String({format:'date'}))},{additionalProperties:false});
 export const RevenueSummary=T.Object({
  from:T.String({format:'date'}),to:T.String({format:'date'}),gross_tzs:T.Number(),reversals_tzs:T.Number(),net_tzs:T.Number(),sales_count:T.Integer(),vouchers_sold:T.Integer(),
