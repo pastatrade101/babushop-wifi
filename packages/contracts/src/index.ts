@@ -31,6 +31,17 @@ export const VipUpdate=T.Object({name:Text(60),note:NullableText(200),enabled:T.
 export const Vip=T.Object({id:Id,mac:T.String(),name:T.String(),note:T.Union([T.String(),T.Null()]),enabled:T.Boolean(),on_router:T.Boolean(),router_binding_id:T.Union([T.String(),T.Null()]),synced_at:T.Union([T.String(),T.Null()]),sync_error:T.Union([T.String(),T.Null()]),created_at:T.String(),updated_at:T.String()},{additionalProperties:false});
 export const Vips=T.Object({items:T.Array(Vip)},{additionalProperties:false});
 export const VipCandidates=T.Object({items:T.Array(T.Object({mac:T.String(),address:T.String(),host_name:T.Union([T.String(),T.Null()]),signed_in_as:T.Union([T.String(),T.Null()]),bypassed:T.Boolean(),vip:T.Boolean(),idle:T.String()},{additionalProperties:false}))},{additionalProperties:false});
+export const CustomersQuery=T.Object({q:T.Optional(T.String({maxLength:100})),filter:T.Optional(T.Union([T.Literal('all'),T.Literal('bought'),T.Literal('tried')]))},{additionalProperties:false});
+const NullStr=T.Union([T.String(),T.Null()]);
+export const Customers=T.Object({
+ items:T.Array(T.Object({phone:T.String(),name:NullStr,note:NullStr,sms_opt_out:T.Boolean(),purchases:T.Integer(),spent_tzs:T.Number(),attempts:T.Integer(),last_at:NullStr,first_at:NullStr,network:NullStr,added_at:NullStr},{additionalProperties:false})),
+ sms:T.Object({enabled:T.Boolean(),balance:T.Union([T.Number(),T.Null()])},{additionalProperties:false}),
+ campaigns:T.Array(T.Object({id:Id,text:T.String(),recipients:T.Integer(),sent:T.Integer(),failed:T.Integer(),sent_by:NullStr,created_at:T.String()},{additionalProperties:false})),
+},{additionalProperties:false});
+export const CustomerInput=T.Object({phone:T.String({minLength:9,maxLength:20}),name:T.Optional(T.Union([T.String({maxLength:80}),T.Null()])),note:T.Optional(T.Union([T.String({maxLength:300}),T.Null()])),sms_opt_out:T.Optional(T.Boolean())},{additionalProperties:false});
+export const Customer=T.Object({phone:T.String(),name:NullStr,note:NullStr,sms_opt_out:T.Boolean()},{additionalProperties:false});
+export const CustomerSmsInput=T.Object({phones:T.Array(T.String({maxLength:20}),{minItems:1,maxItems:500}),text:T.String({minLength:1,maxLength:1000})},{additionalProperties:false});
+export const CustomerSmsResult=T.Object({campaign_id:Id,queued:T.Integer(),skipped:T.Integer(),segments:T.Integer(),credits:T.Integer()},{additionalProperties:false});
 export const PartnerCollections=T.Object({source:T.String(),payments:T.Integer(),total_tzs:T.Number(),this_month_tzs:T.Number(),refund_due:T.Integer(),refund_due_tzs:T.Number(),first_paid_at:T.Union([T.String(),T.Null()]),last_paid_at:T.Union([T.String(),T.Null()]),networks:T.Array(T.Object({network:T.String(),payments:T.Integer(),total_tzs:T.Number()},{additionalProperties:false}))},{additionalProperties:false});
 export const RevenueQuery=T.Object({from:T.Optional(T.String({format:'date'})),to:T.Optional(T.String({format:'date'}))},{additionalProperties:false});
 export const RevenueSummary=T.Object({

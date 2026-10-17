@@ -207,3 +207,34 @@ export async function deliverWhatsAppOne(config:WhatsAppConfig|null=whatsappConf
  console.error(`Sale WhatsApp for ${sale.receipt} was not delivered: ${result.error}`);
  return true;
 }
+
+// ── Custom SMS to Wi-Fi users ────────────────────────────────────────────────
+
+/**
+ * Send at most one queued custom SMS. The text comes from its campaign; a
+ * person who chose "no SMS" after it was queued is skipped, not texted.
+ */
+export async function deliverCustomSmsOne(config:SmsConfig|null=smsConfig(),fetchImpl:typeof fetch=fetch,db:DB=pool):Promise<boolean>{
+ if(!config)return false;
+ const row=(await db.query(`update wifi.notification_outbox set attempts=attempts+1,next_attempt_at=now()+make_interval(mins=>$1)
+  where id=(select id from wifi.notification_outbox where kind='CUSTOM_SMS' and status='PENDING' and next_attempt_at<=now() order by next_attempt_at limit 1 for update skip locked)
+  returning *`,[LEASE_MINUTES])).rows[0];
+ if(!row)return false;
+ const to=row.recipients[0];
+ const campaign=(await db.query('select c.text,(select sms_opt_out from wifi.customers k where k.site_id=c.site_id and k.phone=$2) opted_out from wifi.sms_campaigns c where c.id=$1',[row.payload?.campaignId,to])).rows[0];
+ if(!campaign||campaign.opted_out){
+  await db.query("update wifi.notification_outbox set status='FAILED',last_error=$2 where id=$1",[row.id,campaign?'Asked for no SMS':'Campaign not found']);
+  return true;
+ }
+ const result=await sendSms(to,campaign.text,config,fetchImpl);
+ if(result.ok){
+  await db.query("update wifi.notification_outbox set status='SENT',sent_at=now(),provider_message_id=$2,last_error=null where id=$1",[row.id,result.id]);
+  return true;
+ }
+ if(result.retryable&&row.attempts<MAX_ATTEMPTS){
+  await db.query('update wifi.notification_outbox set next_attempt_at=now()+make_interval(mins=>$2),last_error=$3 where id=$1',[row.id,Math.min(2**row.attempts,120),result.error]);
+  return true;
+ }
+ await db.query("update wifi.notification_outbox set status='FAILED',last_error=$2 where id=$1",[row.id,result.error]);
+ return true;
+}

@@ -8,6 +8,7 @@ import {Type as T} from '@sinclair/typebox';
 import {createClient} from '@supabase/supabase-js';
 import * as offers from '../../../packages/database/src/offers.ts';
 import * as vip from '../../../packages/database/src/vip.ts';
+import * as customers from '../../../packages/database/src/customers.ts';
 import {pool,tx,audit,Problem,requireValue,SITE,type Staff} from '../../../packages/database/src/index.ts';
 import * as sales from '../../../packages/database/src/sales.ts';
 import * as access from '../../../packages/database/src/access.ts';
@@ -104,6 +105,10 @@ export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:str
  const inventory=async()=> (await pool.query("select count(*) filter(where inventory_state='AVAILABLE')::int stock,count(*) filter(where inventory_state='SOLD' and g.id is null)::int sold_unused,count(*) filter(where g.state='ACTIVE' and g.proposed_expires_at>now())::int active,count(*) filter(where g.state='NEEDS_REVIEW')::int needs_review from wifi.vouchers v left join wifi.access_grants g on g.voucher_id=v.id")).rows[0];
  route('GET','/dashboard',undefined,S.Row,async(r:any)=>r.staff.role==='ADMIN'?{...await totals(),...await inventory()}:await inventory());
  route('GET','/reports/sales',undefined,S.Row,async(r:any)=>totals(r.query.from,r.query.to),true,{schema:{querystring:S.Paging}});
+ // Wi-Fi users: phone numbers from sales, with the shop's own names and notes, and custom SMS. Administrators only.
+ route('GET','/customers',undefined,S.Customers,async(r:any)=>customers.listCustomers({q:r.query.q,filter:r.query.filter}),true,{schema:{querystring:S.CustomersQuery}});
+ route('PUT','/customers',S.CustomerInput,S.Customer,async(r:any)=>customers.saveCustomer(r.staff,r.body),true);
+ route('POST','/customers/sms',S.CustomerSmsInput,S.CustomerSmsResult,async(r:any)=>customers.sendCustomSms(r.staff,r.body),true,{config:{rateLimit:{max:5,timeWindow:'1 minute'}}});
  // VIP devices: free access by Wi-Fi address, mirrored as tagged bypass bindings on the router. Administrators only.
  route('GET','/vip-devices',undefined,S.Vips,async()=>vip.listVip(),true);
  route('GET','/vip-devices/candidates',undefined,S.VipCandidates,async()=>vip.vipCandidates(),true);
