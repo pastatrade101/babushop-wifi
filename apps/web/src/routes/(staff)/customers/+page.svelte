@@ -55,7 +55,7 @@ const submitSms=()=>{sending=true;smsProblem=null;return async({result,update}:{
   <p>Everyone who bought, or tried to buy, by phone number. Give them names, keep notes, and send an SMS for a follow-up or an offer.</p></div>
  <div class="heading-actions">
   <button type="button" class="button secondary" onclick={()=>openEdit(null)}><Icon name="plus" size={16}/>Add user</button>
-  <button type="button" class="button" disabled={!reachable||!data.sms.enabled} onclick={openSms} title={data.sms.enabled?'':'Add MOSMS_TOKEN on the server to send SMS'}><Icon name="payment" size={16}/>Send SMS{#if chosen.size} ({reachable}){/if}</button>
+  <button type="button" class="button" disabled={!reachable||!data.sms.enabled} onclick={openSms} title={data.sms.enabled?'':'Add MOSMS_TOKEN on the server to send SMS'}><Icon name="payment" size={16}/>Send SMS{#if chosen.size}{` (${reachable})`}{/if}</button>
  </div>
 </div>
 
@@ -63,19 +63,27 @@ const submitSms=()=>{sending=true;smsProblem=null;return async({result,update}:{
 {#if form?.error&&!editProblem&&!smsProblem}<div class="notice error" role="alert">{form.error}</div>{/if}
 
 <section class="panel list-panel">
- <form method="GET" class="toolbar" role="search">
-  <input name="q" value={data.q} placeholder="Search name, note or phone…" aria-label="Search users">
-  <select name="filter" aria-label="Which users">
-   <option value="all" selected={data.filter==='all'}>Everyone</option>
-   <option value="bought" selected={data.filter==='bought'}>Bought</option>
-   <option value="tried" selected={data.filter==='tried'}>Tried, never paid</option>
-  </select>
-  <button class="button secondary">Apply</button>
- </form>
- <p class="small muted sms-line">{users.length} user{users.length===1?'':'s'} shown{#if chosen.size} · {chosen.size} ticked{/if} · {#if data.sms.enabled}SMS credits left: <strong>{data.sms.balance??'unknown'}</strong>{:else}SMS is not set up{/if}</p>
+ <div class="filters">
+  <form method="GET" class="search" role="search">
+   <input type="hidden" name="filter" value={data.filter}>
+   <span class="search-box"><Icon name="search" size={18}/><input name="q" type="search" value={data.q} placeholder="Search name, note or phone" aria-label="Search users" autocomplete="off"></span>
+   <button class="button secondary">Search</button>
+  </form>
+  <nav class="tabs" aria-label="Which users">
+   {#each [['all','Everyone'],['bought','Bought'],['tried','Tried']] as [key,label] (key)}
+    <a href={'?'+new URLSearchParams({filter:key,...(data.q?{q:data.q}:{})})} class:on={data.filter===key} aria-current={data.filter===key?'page':undefined} data-sveltekit-noscroll>{label}<span class="count">{data.counts?.[key]??0}</span></a>
+   {/each}
+  </nav>
+ </div>
+ {#if data.q}<p class="searching">Results for “<strong>{data.q}</strong>” · <a href={'?'+new URLSearchParams({filter:data.filter})} data-sveltekit-noscroll>Clear search</a></p>{/if}
+ <p class="small muted sms-line">{users.length} user{users.length===1?'':'s'} shown{#if chosen.size}{` · ${chosen.size} ticked`}{/if} · {#if data.sms.enabled}SMS credits left: <strong>{data.sms.balance??'unknown'}</strong>{:else}SMS is not set up{/if}</p>
 
  {#if !users.length}
-  <p class="muted empty">No users match. Everyone who pays by phone appears here by themselves.</p>
+  <div class="empty">
+   {#if data.q}<p>No one matches “{data.q}”.</p><a class="button secondary" href={'?'+new URLSearchParams({filter:data.filter})}>Clear search</a>
+   {:else if data.filter==='tried'}<p>Everyone who started a payment also finished one. Nobody to follow up here.</p>
+   {:else}<p>No users yet. Everyone who pays by phone appears here by themselves; add others with <strong>Add user</strong>.</p>{/if}
+  </div>
  {:else}
   <div class="select-all"><label class="check"><input type="checkbox" checked={allShown} onchange={toggleAll}>Tick everyone shown</label></div>
   <ul class="users">
@@ -84,7 +92,7 @@ const submitSms=()=>{sending=true;smsProblem=null;return async({result,update}:{
      <input type="checkbox" class="tick" checked={chosen.has(u.phone)} onchange={()=>toggle(u.phone)} aria-label={'Tick '+(u.name??pretty(u.phone))}>
      <div class="who">
       <div class="who-line"><strong>{u.name??'No name yet'}</strong>{#if u.purchases}<span class="pill bought">Bought {u.purchases}×</span>{:else if u.attempts}<span class="pill tried">Tried {u.attempts}×</span>{/if}{#if u.sms_opt_out}<span class="pill off">No SMS</span>{/if}</div>
-      <p class="small"><a href={'tel:+'+u.phone}>{pretty(u.phone)}</a>{#if u.network} · {NETWORKS[u.network]??u.network}{/if}{#if u.purchases} · {money(u.spent_tzs)}{/if} · last {when(u.last_at??u.added_at)}</p>
+      <p class="small"><a href={'tel:+'+u.phone}>{pretty(u.phone)}</a>{#if u.network}{' · '}{NETWORKS[u.network]??u.network}{/if}{#if u.purchases}{' · '}{money(u.spent_tzs)}{/if}{' · last '}{when(u.last_at??u.added_at)}</p>
       {#if u.note}<p class="small note">{u.note}</p>{/if}
      </div>
      <button type="button" class="act" onclick={()=>openEdit(u)}><Icon name="settings" size={15}/>{u.name?'Edit':'Add name'}</button>
@@ -99,7 +107,7 @@ const submitSms=()=>{sending=true;smsProblem=null;return async({result,update}:{
   <h2>Recent SMS</h2>
   <ul class="campaigns">
    {#each data.campaigns as c (c.id)}
-    <li><p>{c.text}</p><p class="small muted">{when(c.created_at)} · {c.recipients} recipient{c.recipients===1?'':'s'} · {c.sent} sent{#if c.failed} · {c.failed} failed{/if}{#if c.sent_by} · by {c.sent_by}{/if}</p></li>
+    <li><p>{c.text}</p><p class="small muted">{when(c.created_at)} · {c.recipients} recipient{c.recipients===1?'':'s'} · {c.sent} sent{#if c.failed}{` · ${c.failed} failed`}{/if}{#if c.sent_by}{` · by ${c.sent_by}`}{/if}</p></li>
    {/each}
   </ul>
  </section>
@@ -125,7 +133,7 @@ const submitSms=()=>{sending=true;smsProblem=null;return async({result,update}:{
   {#if smsProblem}<div class="notice error" role="alert">{smsProblem}</div>{/if}
   <input type="hidden" name="phones" value={JSON.stringify([...chosen])}>
   <label class="field">Message<textarea name="text" rows="5" maxlength="480" bind:value={message} placeholder="JIACHIE WIFI: …"></textarea></label>
-  <p class="counter" class:over={count.segs>3}>{count.n} characters · {count.segs} SMS each{#if !count.plain} · has special characters, so 70 per SMS{/if} · about {count.segs*reachable} credit{count.segs*reachable===1?'':'s'}{#if data.sms.balance!==null} of {data.sms.balance}{/if}</p>
+  <p class="counter" class:over={count.segs>3}>{count.n} characters · {count.segs} SMS each{#if !count.plain}{' · has special characters, so 70 per SMS'}{/if} · about {count.segs*reachable} credit{count.segs*reachable===1?'':'s'}{#if data.sms.balance!==null}{` of ${data.sms.balance}`}{/if}</p>
   <p class="hint">Sent from your MoSMS account. Start with the shop's name so people know who it is from. People marked "No SMS" are skipped.</p>
   <div class="pop-actions"><button type="button" class="button secondary" onclick={()=>closeModal(smsDialog)}>Cancel</button><button class="button" disabled={sending||!count.n||count.segs>3}>{sending?'Sending…':`Send to ${reachable}`}</button></div>
  </form>
@@ -136,11 +144,22 @@ const submitSms=()=>{sending=true;smsProblem=null;return async({result,update}:{
  .heading-actions .button{margin:0;height:42px}
  .panel{margin-bottom:18px}
  .panel h2{margin:0 0 12px;font-size:1.05rem}
- /* One row, one height: search, filter and Apply share an edge. */
- .toolbar{display:flex;gap:8px;align-items:stretch;margin:0 0 10px}
- .toolbar input,.toolbar select{height:42px;min-height:42px;margin:0;box-sizing:border-box}
- .toolbar input{flex:1;min-width:0}
- .toolbar .button{margin:0;height:42px}
+ /* Search on the left, the three views on the right: one height, one edge. */
+ .filters{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;margin:0 0 12px}
+ .search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin:0}
+ .search-box{position:relative;display:block;min-width:0}
+ .search-box :global(svg){position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
+ .search-box input{display:block;width:100%;height:44px;min-height:44px;margin:0;padding:0 12px 0 40px;box-sizing:border-box;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;font-size:.92rem}
+ .search-box input:focus{border-color:var(--primary);outline:2px solid color-mix(in srgb,var(--primary) 25%,transparent);outline-offset:0}
+ .search .button{margin:0;height:44px;padding:0 18px}
+ .tabs{display:inline-flex;align-items:stretch;height:44px;padding:4px;gap:4px;border:1px solid var(--line);border-radius:12px;background:var(--surface-muted);box-sizing:border-box}
+ .tabs a{display:inline-flex;align-items:center;gap:7px;padding:0 14px;border-radius:8px;color:var(--muted);font-size:.86rem;font-weight:600;text-decoration:none;white-space:nowrap}
+ .tabs a:hover{color:var(--ink)}
+ .tabs a.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(15,23,42,.12)}
+ .count{display:inline-grid;place-items:center;min-width:22px;height:20px;padding:0 6px;border-radius:999px;background:var(--surface);color:var(--muted);font-size:.72rem;font-weight:700;font-variant-numeric:tabular-nums;box-sizing:border-box}
+ .tabs a.on .count{background:var(--primary-soft);color:var(--primary-text)}
+ .searching{margin:-2px 0 8px;font-size:.86rem;color:var(--ink)}
+ .searching a{color:var(--primary-text);font-weight:600}
  .sms-line{margin:0 0 8px}
  .select-all{padding:6px 0 8px;border-bottom:1px solid var(--line)}
  .check{display:flex;flex-direction:row;align-items:center;gap:9px;margin:0;font-size:.86rem;font-weight:500}
@@ -157,7 +176,9 @@ const submitSms=()=>{sending=true;smsProblem=null;return async({result,update}:{
  .pill.bought{background:var(--success-soft);color:var(--success)}.pill.tried{background:var(--warning-soft);color:var(--warning)}.pill.off{background:var(--surface-muted);color:var(--muted)}
  .act{display:inline-flex;align-items:center;gap:6px;height:36px;margin:0;padding:0 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);font:inherit;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0}
  .act:hover{background:var(--surface-muted)}
- .empty{margin:8px 0}
+ .empty{display:flex;flex-direction:column;align-items:center;gap:12px;padding:28px 12px;text-align:center;color:var(--muted)}
+ .empty p{margin:0}
+ .empty .button{margin:0}
  .campaigns{list-style:none;margin:0;padding:0}
  .campaigns li{padding:10px 0;border-top:1px solid var(--line)}.campaigns li:first-child{border-top:0}
  .campaigns p{margin:0;white-space:pre-wrap}.campaigns p+p{margin-top:4px}
@@ -175,5 +196,5 @@ const submitSms=()=>{sending=true;smsProblem=null;return async({result,update}:{
  .hint{margin:-4px 0 0;font-size:.78rem;color:var(--muted)}
  .pop-actions{display:flex;justify-content:flex-end;gap:10px}.pop-actions .button{margin:0;height:42px}
  .pop .notice{margin:0}
- @media (max-width:640px){.heading-actions{width:100%}.heading-actions .button{flex:1}.toolbar{flex-wrap:wrap}.toolbar input{flex-basis:100%}.toolbar select{flex:1}.users li{flex-wrap:wrap}.users li .act{margin-left:30px}.pop-actions .button{flex:1}}
+ @media (max-width:640px){.heading-actions{width:100%}.heading-actions .button{flex:1}.filters{grid-template-columns:1fr}.tabs{display:grid;grid-template-columns:repeat(3,1fr);width:100%}.tabs a{justify-content:center;padding:0 6px}.users li{flex-wrap:wrap;align-items:flex-start}.users li .tick{margin-top:3px}.who{flex:1 1 calc(100% - 40px)}.users li .act{margin-left:30px}.pop-actions .button{flex:1}}
 </style>

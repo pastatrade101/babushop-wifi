@@ -32,12 +32,16 @@ export async function listCustomers(input:{q?:string;filter?:CustomerFilter}={})
    coalesce(s.purchases,0) purchases,coalesce(s.spent_tzs,0) spent_tzs,coalesce(s.attempts,0) attempts,s.last_at,s.first_at,s.network,c.created_at added_at
   from stats s full outer join (select * from wifi.customers where site_id=$1) c on c.phone=s.phone
   where ($2='' or c.name ilike '%'||$2||'%' or c.note ilike '%'||$2||'%' or ($3<>'' and coalesce(c.phone,s.phone) like '%'||$3||'%'))
-   and ($4='all' or ($4='bought' and coalesce(s.purchases,0)>0) or ($4='tried' and coalesce(s.purchases,0)=0))
-  order by coalesce(s.last_at,c.created_at) desc nulls last limit 500`,[SITE,q,digits.startsWith('0')?digits.slice(1):digits,input.filter||'all']);
+  order by coalesce(s.last_at,c.created_at) desc nulls last limit 1000`,[SITE,q,digits.startsWith('0')?digits.slice(1):digits]);
+ // One query, three views: the counts for each tab come with whichever list is shown.
+ const counts={all:rows.length,bought:rows.filter(r=>r.purchases>0).length,tried:rows.filter(r=>r.purchases===0).length};
+ const filter=input.filter||'all';
+ const shown=rows.filter(r=>filter==='all'||(filter==='bought'?r.purchases>0:r.purchases===0)).slice(0,500);
  const iso=(d:Date|null)=>d?new Date(d).toISOString():null;
  const config=smsConfig();
  return {
-  items:rows.map(r=>({phone:r.phone,name:r.name,note:r.note,sms_opt_out:r.sms_opt_out,purchases:r.purchases,spent_tzs:Number(r.spent_tzs),attempts:r.attempts,last_at:iso(r.last_at),first_at:iso(r.first_at),network:r.network,added_at:iso(r.added_at)})),
+  counts,
+  items:shown.map(r=>({phone:r.phone,name:r.name,note:r.note,sms_opt_out:r.sms_opt_out,purchases:r.purchases,spent_tzs:Number(r.spent_tzs),attempts:r.attempts,last_at:iso(r.last_at),first_at:iso(r.first_at),network:r.network,added_at:iso(r.added_at)})),
   sms:{enabled:!!config,balance:config?await smsBalance(config).catch(()=>null):null},
   campaigns:(await pool.query(`select c.id,c.text,c.recipients,c.created_at,s.display_name sent_by,
     (select count(*) from wifi.notification_outbox o where o.kind='CUSTOM_SMS' and o.dedupe_key like c.id::text||':%' and o.status='SENT')::int sent,
