@@ -17,7 +17,10 @@ export const actions={
    // side in a form the buyer could be identified by -- only its digest is stored.
    const started=await api(event,'/portal/purchase',{package_id:String(form.get('package_id')||''),
     ...(form.get('phone')?{phone:String(form.get('phone'))}:{}),
-    ...(form.get('network')?{network:String(form.get('network'))}:{})});
+    ...(form.get('network')?{network:String(form.get('network'))}:{})},
+    // Starting a payment can take a retry (a rejected token, a refused connection);
+    // wait for the API's real answer rather than show an error while a PIN prompt is still coming.
+    undefined,{},60000);
    return {claim_token:started.claim_token,checkout_url:started.checkout_url,flow:started.flow,instruction:started.instruction,amount_tzs:started.amount_tzs};
   }catch(e){return fail(400,{error:(e as Error).message});}
  }

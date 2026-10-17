@@ -86,29 +86,65 @@ function publicKey():string{
  return raw?raw.replace(/\\n/g,'\n'):'';
 }
 
-let cached:{token:string;expires:number}|null=null;
+let cached:{token:string;expires:number;issued:number}|null=null;
 
-/** Bearer token, cached until a minute before it expires. */
+/**
+ * A request that failed while connecting, before any of it reached the other
+ * side: refused, no route, no such host, or the connection itself timing out.
+ * Only these are safe to send again. A reset or a timeout after connecting may
+ * have delivered the request, and a payment request delivered twice can push
+ * two PIN prompts to the same phone.
+ */
+/** Retry only after a first attempt this quick; give the retry this long in all; never start a send with less than this left. */
+const RETRY_WINDOW_MS=5000,RETRY_BUDGET_MS=20000,MIN_SEND_MS=5000;
+const NEVER_SENT=new Set(['ECONNREFUSED','ENOTFOUND','EAI_AGAIN','ENETUNREACH','EHOSTUNREACH','UND_ERR_CONNECT_TIMEOUT']);
+export function neverSent(error:unknown):boolean{
+ const e=error as {code?:string;cause?:{code?:string}};
+ return NEVER_SENT.has(String(e?.cause?.code??e?.code??''));
+}
+const errorCode=(error:unknown)=>{const e=error as {name?:string;code?:string;cause?:{code?:string}};return String(e?.cause?.code??e?.code??e?.name??'error');};
+
+/**
+ * Bearer token, cached until a minute before it expires. Callers that need one
+ * at the same moment share a single sign-in, so two buyers tapping together
+ * never fetch two tokens that could cancel each other.
+ */
+let signingIn:Promise<string>|null=null;
 async function accessToken():Promise<string>{
  if(cached&&cached.expires>Date.now())return cached.token;
+ if(!signingIn){const current:Promise<string>=fetchToken().finally(()=>{if(signingIn===current)signingIn=null;});signingIn=current;}
+ return signingIn;
+}
+async function fetchToken():Promise<string>{
  const appName=process.env.AZAM_APP_NAME||'',clientId=process.env.AZAM_CLIENT_ID||'',clientSecret=process.env.AZAM_CLIENT_SECRET||'';
  if(!appName||!clientId||!clientSecret)throw new Problem(503,'Mobile payment is not configured.');
- let response:Response,text='';
- try{
-  response=await fetch(authBase()+'/AppRegistration/GenerateToken',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appName,clientId,clientSecret}),signal:AbortSignal.timeout(15000)});
-  text=await response.text();
- }catch{throw new Problem(502,'Could not reach the payment service. Please try again or pay the attendant.');}
+ let response:Response|undefined,text='';
+ // Asking for a token moves no money, so a connection that never got through is tried once more.
+ const began=Date.now();
+ for(let attempt=1;attempt<=2&&!response;attempt++){
+  try{
+   response=await fetch(authBase()+'/AppRegistration/GenerateToken',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appName,clientId,clientSecret}),signal:AbortSignal.timeout(15000)});
+   text=await response.text();
+  }catch(error){
+   if(attempt===1&&neverSent(error)&&Date.now()-began<=RETRY_WINDOW_MS){console.warn(`AzamPay sign-in could not connect (${errorCode(error)}); trying once more.`);continue;}
+   throw new Problem(502,'Could not reach the payment service. Please try again or pay the attendant.');
+  }
+ }
+ if(!response)throw new Problem(502,'Could not reach the payment service. Please try again or pay the attendant.');
  let json:{data?:{accessToken?:string;expire?:string}}={};
  try{json=text?JSON.parse(text):{};}catch{/* non-JSON body */}
  const token=json.data?.accessToken;
  if(!response.ok||!token)throw new Problem(502,'The payment service could not be reached. Please try again or pay the attendant.');
  const expiry=json.data?.expire?Date.parse(json.data.expire):NaN;
- cached={token,expires:Number.isFinite(expiry)?expiry-60000:Date.now()+3300000};
+ cached={token,expires:Number.isFinite(expiry)?expiry-60000:Date.now()+3300000,issued:Date.now()};
  return token;
 }
 
+/** Drop the kept token, but only if it is still the one that was rejected: never a fresh one another request just fetched. */
+function forgetToken(rejected:string){if(cached?.token===rejected)cached=null;}
+
 /** Test seam: a failed call must not leave a stale token behind. */
-export function resetToken(){cached=null;lastFailure=null;}
+export function resetToken(){cached=null;signingIn=null;lastFailure=null;}
 
 /**
  * Why the last checkout failed, for the operator only.
@@ -141,7 +177,12 @@ export const azamProvider:PaymentProvider={
   if(!network)throw new Problem(400,'Choose your mobile money network.');
   if(!input.customer.phone)throw new Problem(400,'Enter the number that will pay.');
   const accountNumber=normalizePhone(input.customer.phone);
-  const token=await accessToken();
+  const startedAt=Date.now();
+  let token:string;
+  try{token=await accessToken();}
+  catch(error){lastFailure={at:new Date().toISOString(),status:0,detail:'sign-in: '+(error as Error).message};throw error;}
+  // When this request's token was issued, for the age logged if AzamPay rejects it.
+  const issuedAt=cached?.token===token?cached.issued:null;
   const payload={
    accountNumber,amount:String(amount),currency:input.currency,
    externalId:input.reference,provider:network,
@@ -156,16 +197,46 @@ export const azamProvider:PaymentProvider={
    // integration this shop settles through reads exactly that.
    additionalProperties:{source:sourceName(),property1:sourceName(),property2:input.reference,intent_reference:input.reference},
   };
-  let response:Response,text='';
-  try{
-   response=await fetch(checkoutUrl(),{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(20000)});
-   text=await response.text();
-  }catch(error){
-   lastFailure={at:new Date().toISOString(),status:0,detail:'network: '+(error as Error).message};
+  // The same body, and so the same reference, on every attempt: a retry stays one purchase.
+  const url=checkoutUrl(),body=JSON.stringify(payload);
+  const send=async(bearer:string,timeoutMs=20000):Promise<{response:Response;text:string}|{error:unknown}>=>{
+   try{const response=await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+bearer,'Content-Type':'application/json'},body,signal:AbortSignal.timeout(timeoutMs)});return {response,text:await response.text()};}
+   catch(error){return {error};}
+  };
+  let attempt=await send(token);
+  let used=token;
+  // A retry only follows a first attempt that failed quickly (a 401 or a refused
+  // connection is answered at once; a 10 s connect timeout is not retried), and the
+  // retry fits a fixed budget, so the whole checkout ends well inside the buy
+  // page's wait. A buyer must never be shown an error while a prompt is still coming.
+  // One retry, and only when the gateway cannot have acted on the request:
+  // - it rejected our token (401): AzamPay refuses before pushing any prompt, so
+  //   take a fresh token and send again. The kept token's age is logged, to learn
+  //   why AzamPay drops tokens before the expiry it reports;
+  // - the connection never got through, so nothing was sent.
+  // A timeout or reset after connecting, a 5xx, or a decline is never retried:
+  // the PIN prompt may already be on the buyer's phone.
+  const quick=Date.now()-startedAt<=RETRY_WINDOW_MS;
+  if(quick&&'response' in attempt&&attempt.response.status===401){
+   const age=issuedAt===null?null:Math.round((Date.now()-issuedAt)/1000);
+   console.warn(`AzamPay rejected the kept token${age===null?'':` (${age}s old)`}; retrying ${input.reference} once with a fresh token.`);
+   forgetToken(token);
+   const retryBy=Date.now()+RETRY_BUDGET_MS;
+   try{used=await accessToken();}
+   catch(error){lastFailure={at:new Date().toISOString(),status:401,detail:'token rejected; fresh sign-in failed: '+(error as Error).message};throw error;}
+   const left=retryBy-Date.now();
+   if(left<MIN_SEND_MS){lastFailure={at:new Date().toISOString(),status:401,detail:'token rejected; fresh sign-in took too long to retry'};throw new Problem(502,'The payment service is slow right now. Please try again or pay the attendant.');}
+   attempt=await send(used,Math.min(20000,left));
+  }else if(quick&&'error' in attempt&&neverSent(attempt.error)){
+   console.warn(`Could not connect to the payment gateway (${errorCode(attempt.error)}); retrying ${input.reference} once.`);
+   attempt=await send(token,RETRY_BUDGET_MS);
+  }
+  if('error' in attempt){
+   lastFailure={at:new Date().toISOString(),status:0,detail:'network: '+(attempt.error as Error).message};
    throw new Problem(502,'Could not reach the payment service. Please try again or pay the attendant.');
   }
-  // A rejected token is worth one retry with a fresh one; anything else is not.
-  if(response.status===401){resetToken();lastFailure={at:new Date().toISOString(),status:401,detail:text.slice(0,1200)};throw new Problem(502,'The payment service rejected this request. Please try again or pay the attendant.');}
+  const {response,text}=attempt;
+  if(response.status===401){forgetToken(used);lastFailure={at:new Date().toISOString(),status:401,detail:text.slice(0,1200)};throw new Problem(502,'The payment service rejected this request. Please try again or pay the attendant.');}
   let json:CheckoutResponse={};
   try{json=text?JSON.parse(text):{};}catch{/* non-JSON body */}
   // A partner gateway in front of AzamPay may echo the id under its own name.
