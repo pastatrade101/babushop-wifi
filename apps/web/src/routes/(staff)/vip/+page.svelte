@@ -16,7 +16,7 @@ const status=(d:Device)=>!d.enabled?{label:'Switched off',tone:'off'}:d.on_route
 let dialog:HTMLDialogElement|undefined=$state();
 let mac=$state('');let name=$state('');let note=$state('');
 let saving=$state(false);let problem=$state<string|null>(null);
-async function openAdd(prefill?:Candidate){
+async function openAdd(prefill:Candidate|null=null){
  mac=prefill?.mac??'';name=prefill?.host_name??'';note='';problem=null;
  await tick();openModal(dialog);
  (dialog?.querySelector(prefill?'input[name=name]':'input[name=mac]') as HTMLInputElement|null)?.focus();
