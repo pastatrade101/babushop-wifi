@@ -2,7 +2,16 @@ import {pool} from './index.ts';
 import {digest, normalize} from './crypto.ts';
 import {mac} from './access.ts';
 import type {Accounting} from '../../network/src/accounting.ts';
+import {isOfferUsername} from '../../network/src/offer.ts';
+import {recordOfferAccounting} from './offers.ts';
 export async function recordAccounting(event: Accounting, nas: string) {
+  // A free offer session has no voucher: its bytes are kept against the offer.
+  if (isOfferUsername(event.username)) {
+    let device: string;
+    try { device = mac(event.clientMac); } catch { return; }
+    await recordOfferAccounting(pool, event, device, nas);
+    return;
+  }
   let code: string, clientMac: string;
   try { code = normalize(event.username); clientMac = mac(event.clientMac); } catch { return; }
   const grant = (await pool.query(`select g.id from wifi.access_grants g join wifi.vouchers v on v.id=g.voucher_id

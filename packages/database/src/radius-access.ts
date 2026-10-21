@@ -18,7 +18,7 @@ export async function authorizeRadius(request: VoucherRequest, config: RadiusCon
     return tx(async db => {
       await db.query("set local statement_timeout='2000ms'");
       const now: Date = (await db.query('select clock_timestamp() as now')).rows[0].now;
-      return authorizeOffer(db, device, now);
+      return authorizeOffer(db, device, now, request.username);
     });
   }
   let code: string, clientMac: string;

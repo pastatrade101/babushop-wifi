@@ -102,3 +102,52 @@ it('puts a hidden offer card on the sign-in page that asks the shop server, and 
   expect(page).not.toContain('id="offer"');expect(page).not.toContain('fetch(');
  }
 });
+
+import {recordOfferAccounting,summarize,USAGE_DEVICES} from '../packages/database/src/offers.ts';
+
+// A database stand-in: answers the sign-in lookup, records every statement.
+function fakeDb(login:{offer_id:string}|null){
+ const calls:{sql:string;params:any[]}[]=[];
+ return {calls,query:async(sql:string,params:any[]=[])=>{calls.push({sql,params});return {rows:/from wifi\.free_offer_logins/.test(sql)?(login?[login]:[]):[]} as any;}};
+}
+const event={username:'OFA-BURE-k3x9q2m7wd',clientMac:'aa-bb-cc-dd-ee-ff',sessionId:'81a00001',status:'Interim-Update',seconds:600,upload:'1500000',download:'48000000',terminateCause:null};
+
+it('keeps a free session\'s data against the offer the phone signed in to, by its sign-in name first',async()=>{
+ const db=fakeDb({offer_id:'11111111-1111-4111-8111-111111111111'});
+ expect(await recordOfferAccounting(db as any,event,'AA:BB:CC:DD:EE:FF','10.77.0.2')).toBe(true);
+ const [lookup,upsert]=db.calls;
+ // The name it signed in with wins; a sign-in from before names were kept stands in for it.
+ expect(lookup.sql).toMatch(/username=\$1 or username is null/);
+ expect(lookup.sql).toMatch(/order by \(username is not null\) desc, created_at desc/);
+ expect(lookup.params).toEqual(['OFA-BURE-k3x9q2m7wd','AA:BB:CC:DD:EE:FF']);
+ expect(upsert.sql).toMatch(/insert into wifi\.free_offer_sessions/);
+ // Absolute counters: a repeat or late report can only raise them, never add twice or reopen.
+ expect(upsert.sql).toMatch(/greatest\(wifi\.free_offer_sessions\.download_bytes,excluded\.download_bytes\)/);
+ expect(upsert.sql).toMatch(/stopped_at=coalesce\(wifi\.free_offer_sessions\.stopped_at,excluded\.stopped_at\)/);
+ // A reused router id from another phone or name is a different session, not an update to the old one.
+ expect(upsert.sql).toMatch(/on conflict\(nas,session_id,username,client_mac\)/);
+ expect(upsert.params).toEqual(['11111111-1111-4111-8111-111111111111','AA:BB:CC:DD:EE:FF','OFA-BURE-k3x9q2m7wd','10.77.0.2','81a00001',600,'1500000','48000000',false,null]);
+ const stop=fakeDb({offer_id:'11111111-1111-4111-8111-111111111111'});
+ await recordOfferAccounting(stop as any,{...event,status:'Stop',terminateCause:'Session-Timeout'},'AA:BB:CC:DD:EE:FF','10.77.0.2');
+ expect(stop.calls[1].params.slice(8)).toEqual([true,'Session-Timeout']);
+});
+
+it('drops a free-session report no sign-in explains, writing nothing',async()=>{
+ const db=fakeDb(null);
+ expect(await recordOfferAccounting(db as any,event,'AA:BB:CC:DD:EE:FF','10.77.0.2')).toBe(false);
+ expect(db.calls).toHaveLength(1);
+});
+
+it('totals every device, lists the busiest first with those online on top, and caps the list',()=>{
+ const d=(device:string,down:number,up:number,online=false,measured=true)=>({device,sign_ins:1,down_bytes:down,up_bytes:up,seconds:60,online,measured,last_at:'2026-10-21T07:00:00.000Z'});
+ const s=summarize([d('A',5e6,1e6),d('B',90e6,4e6),d('C',1e6,0,true),d('D',0,0,false,false)]);
+ expect(s.online).toBe(1);
+ expect(s.down_bytes).toBe(96e6);
+ expect(s.up_bytes).toBe(5e6);
+ expect(s.measured).toBe(true);
+ expect(s.usage.map(u=>u.device)).toEqual(['C','B','A','D']);
+ expect(summarize([d('X',0,0,false,false)]).measured).toBe(false);
+ const many=summarize(Array.from({length:USAGE_DEVICES+5},(_,i)=>d('M'+i,i*1e6,0)));
+ expect(many.usage).toHaveLength(USAGE_DEVICES);
+ expect(many.down_bytes).toBe(Array.from({length:USAGE_DEVICES+5},(_,i)=>i*1e6).reduce((a,b)=>a+b,0));
+});

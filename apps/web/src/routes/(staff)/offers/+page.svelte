@@ -5,7 +5,9 @@ import Icon from '$lib/components/Icon.svelte';
 import {openModal,closeModal} from '$lib/modal';
 let {data,form}=$props();
 
-type Offer={id:string;name:string;starts_at:string;ends_at:string;daily_start:string|null;daily_end:string|null;download_mbps:number;upload_mbps:number;enabled:boolean;state:'ON'|'WAITING'|'ENDED'|'OFF';until:string|null;next:string|null;logins:number;devices:number;sales:number;revenue_tzs:number};
+type Offer={id:string;name:string;starts_at:string;ends_at:string;daily_start:string|null;daily_end:string|null;download_mbps:number;upload_mbps:number;enabled:boolean;state:'ON'|'WAITING'|'ENDED'|'OFF';until:string|null;next:string|null;logins:number;devices:number;sales:number;revenue_tzs:number;
+ online:number;down_bytes:number;up_bytes:number;measured:boolean;usage:Usage[]};
+type Usage={device:string;sign_ins:number;down_bytes:number;up_bytes:number;seconds:number;online:boolean;measured:boolean;last_at:string|null};
 const offers=$derived((data.offers??[]) as Offer[]);
 
 // ── Times: always Tanzanian (UTC+3), whatever the browser's own zone ────────
@@ -18,6 +20,10 @@ const range=(o:Offer)=>{const a=new Date(o.starts_at),b=new Date(o.ends_at);retu
 /** An instant as the value a datetime-local input shows in Dar es Salaam. */
 const local=(iso:string)=>new Date(new Date(iso).getTime()+3*3600_000).toISOString().slice(0,16);
 const money=(n:number)=>'TZS '+new Intl.NumberFormat('en-TZ').format(Math.round(n||0));
+// Data the way a phone plan counts it: 1 GB = 1000 MB.
+// The unit steps up before rounding would print "1000 MB".
+const bytes=(n:number)=>{const v=Math.max(0,n||0);return v>=999.5e6?(v/1e9).toFixed(v>=9.95e9?1:2)+' GB':v>=999.5e3?(v/1e6).toFixed(v>=99.95e6?0:1)+' MB':v>=1e3?Math.round(v/1e3)+' KB':v?'1 KB':'0 MB';};
+const minutes=(s:number)=>{const m=Math.round((s||0)/60),h=Math.floor(m/60);return h?`${h}h ${m%60}m`:`${m} min`;};
 
 // A clock for the countdowns and progress bars, ticking each minute.
 let now=$state(Date.now());
@@ -115,15 +121,40 @@ const submit=({formData}:{formData:FormData})=>{
 
     <dl class="stats">
      <div><dt>Devices</dt><dd>{o.devices}</dd></div>
+     <div><dt>On now</dt><dd class:live={o.online>0}>{o.online}</dd></div>
+     <div><dt>Data used</dt><dd title={o.measured?`${bytes(o.down_bytes)} down · ${bytes(o.up_bytes)} up`:'Recorded for sign-ins from 21 Oct'}>{o.measured?bytes(o.down_bytes+o.up_bytes):'—'}</dd></div>
      <div><dt>Free sign-ins</dt><dd>{o.logins}</dd></div>
      <div><dt>Packages sold</dt><dd>{o.sales}</dd></div>
      <div><dt>Taken</dt><dd>{money(o.revenue_tzs)}</dd></div>
     </dl>
     <p class="insight">
      {#if o.state==='WAITING'}Nothing to measure yet. Counts start when the offer goes on.
-     {:else if !o.devices}No phone has used it yet.{#if o.state==='ON'} Phones see it when they join the Wi-Fi.{/if}
+     {:else if !o.devices}No phone has used it yet.{#if o.state==='ON'}{' '}Phones see it when they join the Wi-Fi.{/if}
      {:else}{o.devices} device{o.devices===1?'':'s'} went online free{o.logins>o.devices?`, ${(o.logins/o.devices).toFixed(1)} sign-ins each`:''}. {o.sales?`${o.sales} package${o.sales===1?'':'s'} sold over the same time.`:'No package sold over the same time yet.'}{/if}
     </p>
+    {#if o.usage.length}
+     <details class="usage">
+      <summary>Data per device <span class="count">{o.usage.length}{o.devices>o.usage.length?` of ${o.devices}`:''}</span></summary>
+      <div class="usage-wrap">
+       <table>
+        <thead><tr><th>Device</th><th>Status</th><th class="num">Downloaded</th><th class="num">Uploaded</th><th class="num">Time online</th><th class="num">Sign-ins</th></tr></thead>
+        <tbody>
+         {#each o.usage as d (d.device)}
+          <tr>
+           <td class="mac">{d.device}</td>
+           <td>{#if d.online}<span class="pill on">Online</span>{:else}<span class="pill">{d.last_at?at(d.last_at):'—'}</span>{/if}</td>
+           <td class="num">{d.measured?bytes(d.down_bytes):'—'}</td>
+           <td class="num">{d.measured?bytes(d.up_bytes):'—'}</td>
+           <td class="num">{d.measured?minutes(d.seconds):'—'}</td>
+           <td class="num">{d.sign_ins}</td>
+          </tr>
+         {/each}
+        </tbody>
+       </table>
+      </div>
+      {#if o.usage.some(d=>!d.measured)}<p class="usage-note">— means the phone signed in before data was recorded (from 21 Oct).</p>{/if}
+     </details>
+    {/if}
    </article>
   {/each}
  </div>
@@ -174,7 +205,7 @@ const submit=({formData}:{formData:FormData})=>{
  @media (prefers-reduced-motion:reduce){.pulse{animation:none}}
 
  .offer-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,430px),1fr));gap:16px}
- .offer-card{position:relative;display:flex;flex-direction:column;gap:14px;padding:20px;border:1px solid var(--line);border-radius:14px;background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
+ .offer-card{position:relative;display:flex;flex-direction:column;gap:14px;padding:20px;border:1px solid var(--line);border-radius:14px;background:var(--surface);box-shadow:var(--shadow);overflow:hidden;container-type:inline-size}
  .offer-card::before{content:"";position:absolute;inset:0 0 auto;height:4px;background:var(--line)}
  .tone-on::before{background:var(--success)}.tone-waiting::before{background:var(--primary)}
  .offer-card header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
@@ -202,11 +233,31 @@ const submit=({formData}:{formData:FormData})=>{
  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:0;padding:0;list-style:none}
  .chips li{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:8px;background:var(--surface-muted);color:var(--ink);font-size:.78rem}
 
- .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;margin:0;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:var(--line)}
+ .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;margin:0;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:var(--line)}
  .stats div{padding:11px 12px;background:var(--surface)}
  .stats dt{font-size:.7rem;color:var(--muted);font-weight:600;letter-spacing:.02em}
  .stats dd{margin:3px 0 0;font-size:1.15rem;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
  .insight{margin:0;font-size:.84rem;color:var(--muted)}
+ .stats dd.live{color:var(--success)}
+ /* A narrow card (two side by side) keeps three figures to a row only while a full TZS amount still fits. */
+ @container (max-width:520px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+ /* Who used how much: folded away until asked for. */
+ .usage{border:1px solid var(--line);border-radius:11px;background:var(--surface)}
+ .usage summary{display:flex;align-items:center;gap:8px;min-height:42px;padding:0 12px;cursor:pointer;font-size:.84rem;font-weight:600;color:var(--ink);list-style:none}
+ .usage summary::-webkit-details-marker{display:none}
+ .usage summary::before{content:"";width:7px;height:7px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(-45deg);transition:transform .15s}
+ .usage[open] summary::before{transform:rotate(45deg)}
+ .usage .count{margin-left:auto;padding:1px 8px;border-radius:99px;background:var(--surface-muted);color:var(--muted);font-size:.75rem}
+ .usage-wrap{overflow-x:auto;border-top:1px solid var(--line)}
+ .usage table{width:100%;border-collapse:collapse;font-size:.8rem}
+ .usage th{padding:8px 12px;text-align:left;font-size:.7rem;font-weight:600;color:var(--muted);white-space:nowrap;background:var(--surface-muted)}
+ .usage td{padding:8px 12px;border-top:1px solid var(--line);color:var(--ink);white-space:nowrap}
+ .usage .num{text-align:right;font-variant-numeric:tabular-nums}
+ .usage .mac{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.76rem}
+ .usage .pill{display:inline-block;padding:1px 8px;border-radius:99px;background:var(--surface-muted);color:var(--muted);font-size:.72rem}
+ .usage .pill.on{background:var(--success-soft,rgba(22,163,74,.12));color:var(--success)}
+ .usage-note{margin:0;padding:8px 12px;border-top:1px solid var(--line);font-size:.75rem;color:var(--muted)}
 
  .empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:40px 24px}
  .empty-icon{display:grid;place-items:center;width:56px;height:56px;border-radius:16px;background:var(--primary-soft);color:var(--primary-text)}
