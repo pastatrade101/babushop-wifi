@@ -14,6 +14,7 @@
     "lint": "eslint .",
     "test": "vitest run tests/unit.test.ts tests/api.test.ts tests/network.test.ts tests/network-access.test.ts tests/payments-azam.test.ts tests/csv.test.ts tests/theme.test.ts tests/radius.test.ts tests/revenue.test.ts tests/notifications.test.ts tests/router-console.test.ts tests/router-files.test.ts tests/swahili.test.ts tests/staff.test.ts tests/hotspot-pages.test.ts tests/providers.test.ts tests/sms.test.ts tests/whatsapp.test.ts tests/forward.test.ts tests/offers.test.ts tests/vip.test.ts tests/customers.test.ts tests/payments-azam-retry.test.ts tests/mobile-auth.test.ts",
     "test:integration": "vitest run tests/integration.test.ts",
+    "test:music-relay": "vitest run tests/music-relay.test.ts tests/payment-logging.test.ts tests/forward.test.ts tests/payments-azam.test.ts tests/payments-azam-retry.test.ts",
     "test:e2e": "playwright test",
     "db:start": "supabase start",
     "db:migrate": "supabase migration up --local",

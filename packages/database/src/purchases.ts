@@ -3,6 +3,7 @@ import {pool,tx,audit,requireValue,Problem,SITE} from './index.ts';
 import {digest,decrypt,present,token} from './crypto.ts';
 import {paymentProvider,webhookUrl,callbackShape} from '../../payments/src/index.ts';
 import {enqueueSalePaid,enqueueSaleWhatsApp,enqueueVoucherSms,voucherSmsQueued} from './notifications.ts';
+import {captureMusicCallback} from './music-relay.ts';
 
 // Self-service voucher purchase by mobile money, alongside the cash counter.
 //
@@ -133,6 +134,8 @@ export async function webhook(rawBody:Buffer|string,headers:Record<string,string
   await audit(pool,null,'PAYMENT_CALLBACK_REJECTED',null,{provider:provider!.name,shape:callbackShape(rawBody,headers)}).catch(()=>{});
   throw new Problem(401,'Invalid signature');
  }
+ // Music owns its durable queue; do not consume its retry in Wi-Fi event dedupe.
+ if(await captureMusicCallback(rawBody,headers,provider!.name))return {ok:true};
  const event=provider!.parseEvent(JSON.parse(Buffer.isBuffer(rawBody)?rawBody.toString('utf8'):String(rawBody)));
  // Match on our own reference first -- Snippe quotes a transaction reference on
  // the event that matches neither the session reference it returned nor the one

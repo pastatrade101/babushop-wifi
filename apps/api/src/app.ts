@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import {safeRequestPath} from './logging.ts';
 import Fastify from 'fastify';
 import {networkPlan,validateSpeeds,checkMikroTik} from '../../../packages/network/src/index.ts';
 import helmet from '@fastify/helmet';
@@ -25,7 +26,7 @@ import * as S from '../../../packages/contracts/src/index.ts';
 import {registerNetwork} from './network.ts';
 declare module 'fastify' {interface FastifyRequest {staff:Staff|null;}}
 export async function buildApp(options:{adapter?:Adapter;verifyToken?:(token:string)=>Promise<string|null>;logger?:boolean}={}){
- const adapter=options.adapter||adapterFromEnv();const app=Fastify({logger:options.logger?{level:'info',redact:['req.headers.authorization','req.headers.cookie','res.headers.set-cookie'],serializers:{req:r=>({method:r.method,url:r.url.split('?')[0],id:r.id}),err:()=>({type:'Error',message:'Request failed',stack:''})}}:false,bodyLimit:16384,trustProxy:process.env.TRUST_PROXY||false,ajv:{customOptions:{removeAdditional:false}}});
+ const adapter=options.adapter||adapterFromEnv();const app=Fastify({logger:options.logger?{level:'info',redact:['req.headers.authorization','req.headers.cookie','res.headers.set-cookie'],serializers:{req:r=>({method:r.method,url:safeRequestPath(r.url),id:r.id}),err:()=>({type:'Error',message:'Request failed',stack:''})}}:false,bodyLimit:16384,trustProxy:process.env.TRUST_PROXY||false,ajv:{customOptions:{removeAdditional:false}}});
  const supabase=options.verifyToken?null:createClient(process.env.SUPABASE_URL!,process.env.SUPABASE_PUBLISHABLE_KEY!,{auth:{persistSession:false,autoRefreshToken:false}});
  const verify=options.verifyToken||(async(token:string)=>{const {data,error}=await supabase!.auth.getUser(token);return error?null:data.user?.id||null;});
  // A token Supabase has just confirmed is remembered for 30 seconds, so the several API calls
